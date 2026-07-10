@@ -318,8 +318,9 @@ def format_vehicle_result(data):
         lines.append("👤 *OWNERSHIP DETAILS*")
         lines.append("─" * 25)
         lines.append(f"👤 Owner: `{own.get('Owner Name', 'N/A')}`")
-        lines.append(f"👨 Father: `{own.get(\"Father's Name\", 'N/A')}`")
-        lines.append(f"📋 Serial No: `{own.get('Owner Serial No', 'N/A')}`")
+father_name = own.get("Father's Name", 'N/A')
+lines.append(f"👨 Father: `{father_name}`")
+lines.append(f"📋 Serial No: `{own.get('Owner Serial No', 'N/A')}`")
         lines.append(f"🏛️ RTO: `{own.get('Registered RTO', 'N/A')}`")
     
     if 'Vehicle Details' in data:
