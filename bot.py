@@ -4,12 +4,17 @@ import re
 import time
 import os
 import json
+import datetime
 
+# ========= CONFIG =========
 BOT_TOKEN = "8885770583:AAEQSJh2cjHl0oPCq8Xhplx0YawzqDFR3Ok"
+ADMIN_ID = 6961291469  # TERI USER ID
 bot = telebot.TeleBot(BOT_TOKEN)
 
 API1_URL = "https://tfqdeadlo-inddataapi.hf.space/search?mobile={}"
+LOG_FILE = "bot_usage.log"
 
+# ========= HELPERS =========
 def clean_number(raw):
     cleaned = re.sub(r'[^\d]', '', raw)
     if cleaned.startswith('91') and len(cleaned) > 10:
@@ -30,7 +35,7 @@ def format_result(data):
     if not data or "error" in data:
         return f"❌ *Error:* {data.get('error', 'Unknown')}"
     
-    lines = ["🔥 *GET YOUR DETAILS BOYYY BY KUSHZNDR* 🔥"]
+    lines = ["🔥 *GET YOUR DETAILS BY KUSHZNDR* 🔥"]
     lines.append("═" * 35)
     
     if isinstance(data, dict) and 'data' in data:
@@ -90,18 +95,131 @@ def export_result(data, number):
             f.write(str(data))
     return filename
 
+# ========= LOGGING SYSTEM =========
+def log_search(user_id, username, first_name, number, data):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    found = 0
+    names = []
+    if data and "data" in data and isinstance(data['data'], list):
+        found = len(data['data'])
+        for record in data['data']:
+            if record.get('name'):
+                names.append(record['name'])
+    
+    log_entry = f"""
+[{timestamp}] 
+USER: {user_id} | @{username} | {first_name}
+NUMBER: {number}
+RECORDS_FOUND: {found}
+NAMES: {', '.join(names) if names else 'N/A'}
+FULL_RESPONSE: {str(data)[:200]}...
+{'-'*60}
+"""
+    
+    with open(LOG_FILE, 'a', encoding='utf-8') as f:
+        f.write(log_entry)
+    
+    print(f"📝 LOG: {user_id} | {number} | {found} records")
+    
+    # Send alert to admin
+    try:
+        bot.send_message(ADMIN_ID, f"🔔 *New Search*\nUser: @{username or 'NoUsername'}\nNumber: `{number}`\nRecords: {found}", parse_mode='Markdown')
+    except:
+        pass
+
+def get_usage_stats():
+    if not os.path.exists(LOG_FILE):
+        return "📊 *No usage data yet.*"
+    
+    with open(LOG_FILE, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    total_searches = content.count('USER:')
+    unique_users = set()
+    total_records = 0
+    
+    for line in content.split('\n'):
+        if line.startswith('USER:'):
+            user_id = line.split('|')[0].replace('USER:', '').strip()
+            unique_users.add(user_id)
+        if line.startswith('RECORDS_FOUND:'):
+            try:
+                total_records += int(line.split(':')[1].strip())
+            except:
+                pass
+    
+    stats = f"""
+📊 *BOT USAGE STATISTICS*
+═══════════════════════
+👥 *Total Unique Users:* {len(unique_users)}
+🔍 *Total Searches:* {total_searches}
+📄 *Total Records Fetched:* {total_records}
+📁 *Log Size:* {os.path.getsize(LOG_FILE) // 1024} KB
+    """
+    return stats
+
+def get_recent_logs(limit=10):
+    if not os.path.exists(LOG_FILE):
+        return "No logs yet."
+    
+    with open(LOG_FILE, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    entries = content.split('-'*60)
+    recent = entries[-limit-1:-1]
+    
+    result = f"📋 *LAST {len(recent)} SEARCHES:*\n\n"
+    for entry in recent:
+        lines = entry.strip().split('\n')
+        for line in lines:
+            if 'USER:' in line or 'NUMBER:' in line or 'RECORDS_FOUND:' in line:
+                result += line.strip() + '\n'
+        result += '\n'
+    
+    return result[:4000]
+
+# ========= BOT HANDLERS =========
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
     bot.send_message(chat_id, 
-                     "🔥 *GET YOUR DETAILS BOYYY KUSHZNDR* 🔥\n\nSend any 10-digit number (without +91).\n\nExample: `9876543210`",
+                     "🔥 *GET YOUR DETAILS BOYYY* 🔥\n\nSend any 10-digit number (without +91).\n\nExample: `9876543210`",
                      parse_mode='Markdown')
+
+@bot.message_handler(commands=['stats'])
+def show_stats(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "❌ Unauthorized.")
+        return
+    stats = get_usage_stats()
+    bot.send_message(message.chat.id, stats, parse_mode='Markdown')
+
+@bot.message_handler(commands=['logs'])
+def show_logs(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "❌ Unauthorized.")
+        return
+    logs = get_recent_logs(10)
+    bot.send_message(message.chat.id, logs, parse_mode='Markdown')
+
+@bot.message_handler(commands=['logfile'])
+def send_log_file(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "❌ Unauthorized.")
+        return
+    if os.path.exists(LOG_FILE):
+        with open(LOG_FILE, 'rb') as f:
+            bot.send_document(message.chat.id, f, caption="📄 *Complete Log File*", parse_mode='Markdown')
+    else:
+        bot.reply_to(message, "No log file yet.")
 
 @bot.message_handler(func=lambda msg: True)
 def handle_number(msg):
     chat_id = msg.chat.id
     raw = msg.text.strip()
     
+    # Multiple numbers
     if ',' in raw or ' ' in raw:
         numbers = [clean_number(x) for x in re.split(r'[, ]+', raw) if clean_number(x)]
         if len(numbers) > 10:
@@ -113,8 +231,12 @@ def handle_number(msg):
             data = fetch_api1(num)
             result = format_result(data)
             bot.send_message(chat_id, result, parse_mode='Markdown', disable_web_page_preview=True)
+            
+            # Log each search
+            log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, num, data)
         return
     
+    # Single number
     number = clean_number(raw)
     if len(number) != 10:
         bot.reply_to(msg, "❌ Invalid. Send exactly 10 digits (no +91).\nExample: `9876543210`", parse_mode='Markdown')
@@ -124,6 +246,9 @@ def handle_number(msg):
     
     data = fetch_api1(number)
     result = format_result(data)
+    
+    # LOG THIS SEARCH
+    log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, number, data)
     
     if len(result) > 4096:
         for i in range(0, len(result), 4096):
@@ -137,9 +262,12 @@ def handle_number(msg):
             bot.send_document(chat_id, f, caption=f"📄 *Report for {number}*", parse_mode='Markdown')
         os.remove(filename)
 
+# ========= MAIN =========
 if __name__ == "__main__":
-    print("🔥 KUSHZNDR 🔥")  # <--- YAHAN CHANGE
+    print("🔥 KUSHZNDR 🔥")
     print(f"✅ Token: {BOT_TOKEN[:10]}...")
+    print(f"👑 Admin ID: {ADMIN_ID}")
+    print(f"📁 Log File: {LOG_FILE}")
     while True:
         try:
             bot.infinity_polling(timeout=60, long_polling_timeout=60)
