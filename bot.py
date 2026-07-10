@@ -785,4 +785,4 @@ def handle_query(msg):
     elif mode == 'gst':
         gst = clean_gst(raw)
         if len(gst) != 15:
-            bot.reply_to(msg, "❌ Invalid GST. Send exactly 15 characters.\nExample: `07AABCF8078M1Z3`", parse
+bot.reply_to(msg, "❌ Invalid GST. Send exactly 15 characters.\nExample: `07AABCF8078M1Z3`", parse_mode='Markdown')
