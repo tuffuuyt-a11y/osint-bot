@@ -6,7 +6,7 @@ import os
 import json
 import datetime
 from threading import Thread
-from flask import Flask
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ========= CONFIG =========
 BOT_TOKEN = "8885770583:AAEQSJh2cjHl0oPCq8Xhplx0YawzqDFR3Ok"
@@ -16,16 +16,18 @@ bot = telebot.TeleBot(BOT_TOKEN)
 API1_URL = "https://tfqdeadlo-inddataapi.hf.space/search?mobile={}"
 LOG_FILE = "bot_usage.log"
 
-# ========= FLASK SERVER (For Render Keep-Alive) =========
-flask_app = Flask(__name__)
+# ========= HTTP SERVER (Built-in - Keep Alive for Render) =========
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        self.wfile.write(b"🔥 KUSHZNDR Bot is Alive!")
 
-@flask_app.route('/')
-def home():
-    return "🔥 KUSHZNDR Bot is Alive!", 200
-
-def run_flask():
+def run_server():
     port = int(os.environ.get("PORT", 10000))
-    flask_app.run(host='0.0.0.0', port=port)
+    server = HTTPServer(('0.0.0.0', port), HealthHandler)
+    server.serve_forever()
 
 # ========= HELPERS =========
 def clean_number(raw):
@@ -271,14 +273,14 @@ def handle_number(msg):
 
 # ========= MAIN =========
 if __name__ == "__main__":
-    # Flask server background mein chalao
-    Thread(target=run_flask, daemon=True).start()
+    # HTTP server background mein chalao
+    Thread(target=run_server, daemon=True).start()
     
     print("🔥 KUSHZNDR 🔥")
     print(f"✅ Token: {BOT_TOKEN[:10]}...")
     print(f"👑 Admin ID: {ADMIN_ID}")
     print(f"📁 Log File: {LOG_FILE}")
-    print(f"🌐 Flask Server Running on Port {os.environ.get('PORT', 10000)}")
+    print(f"🌐 HTTP Server Running on Port {os.environ.get('PORT', 10000)}")
     
     while True:
         try:
