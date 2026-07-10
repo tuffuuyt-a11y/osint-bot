@@ -17,6 +17,8 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 API1_URL = "https://tfqdeadlo-inddataapi.hf.space/search?mobile={}"
 API2_URL = "https://adhaar2info-family-noobster.com-dashbord63hh7qe4.workers.dev/?key=@noob11001&adhaar={}"
+API3_URL = "https://gst-pan-api.onrender.com/gstin-detail/{}"
+API4_URL = "https://vvvin-ng.vercel.app/lookup?rc={}"
 
 LOG_FILE = "/tmp/bot_usage.log"
 
@@ -52,6 +54,14 @@ def clean_aadhaar(raw):
     cleaned = re.sub(r'[^\d]', '', raw)
     return cleaned[:12]
 
+def clean_gst(raw):
+    cleaned = re.sub(r'[^A-Za-z0-9]', '', raw)
+    return cleaned.upper()[:15]
+
+def clean_vehicle(raw):
+    cleaned = re.sub(r'[^A-Za-z0-9]', '', raw)
+    return cleaned.upper()
+
 def fetch_api1(number):
     url = API1_URL.format(number)
     try:
@@ -70,6 +80,30 @@ def fetch_api2(aadhaar):
             data = resp.json()
             data = remove_dev_name(data)
             return data
+        return {"error": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+def fetch_api3(gst):
+    url = API3_URL.format(gst)
+    try:
+        resp = requests.get(url, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            # Remove credit field if exists
+            if 'credit' in data:
+                del data['credit']
+            return data
+        return {"error": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+def fetch_api4(vehicle):
+    url = API4_URL.format(vehicle)
+    try:
+        resp = requests.get(url, timeout=15)
+        if resp.status_code == 200:
+            return resp.json()
         return {"error": f"HTTP {resp.status_code}"}
     except Exception as e:
         return {"error": str(e)}
@@ -131,6 +165,10 @@ def format_number_result(data):
         for k, v in data.items():
             if v and v != "None" and v != "":
                 lines.append(f"*{k}*: `{v}`")
+    
+    lines.append("")
+    lines.append("═" * 35)
+    lines.append("🔥 *Powered by KUSHZNDR* 🔥")
     
     return "\n".join(lines)
 
@@ -212,14 +250,141 @@ def format_aadhaar_result(data):
     
     lines.append("")
     lines.append("═" * 40)
-    lines.append("🔥 *Developed by: KUSHZNDR* 🔥")
+    lines.append("🔥 *Powered by KUSHZNDR* 🔥")
     
     return "\n".join(lines)
 
-def export_result(data, number, query_type):
-    filename = f"{query_type}_{number}.txt"
+def format_gst_result(data):
+    if not data or "error" in data:
+        return f"❌ *Error:* {data.get('error', 'Unknown')}"
+    
+    lines = ["🔥 *GST COMPANY DETAILS* 🔥"]
+    lines.append("═" * 40)
+    lines.append("🔥 *Developed by: KUSHZNDR* 🔥")
+    lines.append("")
+    
+    if data.get('gstin'):
+        lines.append(f"🆔 *GSTIN:* `{data.get('gstin')}`")
+    
+    if 'razorpay_info' in data:
+        razorpay = data['razorpay_info']
+        if 'enrichment_details' in razorpay:
+            enrichment = razorpay['enrichment_details']
+            if 'online_provider' in enrichment:
+                provider = enrichment['online_provider']
+                if 'details' in provider:
+                    details = provider['details']
+                    lines.append("")
+                    lines.append("📋 *COMPANY DETAILS*")
+                    lines.append("─" * 30)
+                    
+                    field_map = {
+                        'legal_name': '🏢 Legal Name',
+                        'trade_name': '📛 Trade Name',
+                        'gstin': '🆔 GSTIN',
+                        'constitution': '📋 Constitution',
+                        'tax_payer_type': '💰 Taxpayer Type',
+                        'status': '📊 Status',
+                        'registration_date': '📅 Registration Date',
+                        'state_jurisdiction': '🏛️ State Jurisdiction',
+                        'central_jurisdiction': '🏛️ Central Jurisdiction',
+                        'primary_address': '📍 Primary Address'
+                    }
+                    
+                    for key, label in field_map.items():
+                        value = details.get(key)
+                        if value and value != "":
+                            lines.append(f"{label}: `{value}`")
+    
+    lines.append("")
+    lines.append("═" * 40)
+    lines.append("🔥 *Powered by KUSHZNDR* 🔥")
+    
+    return "\n".join(lines)
+
+def format_vehicle_result(data):
+    if not data or "error" in data:
+        return f"❌ *Error:* {data.get('error', 'Unknown')}"
+    
+    lines = ["🚗 *VEHICLE DETAILS* 🔥"]
+    lines.append("═" * 40)
+    
+    if data.get('registration_number'):
+        lines.append(f"🔢 *Registration No:* `{data.get('registration_number')}`")
+    
+    if 'Ownership Details' in data:
+        own = data['Ownership Details']
+        lines.append("")
+        lines.append("👤 *OWNERSHIP DETAILS*")
+        lines.append("─" * 25)
+        lines.append(f"👤 Owner: `{own.get('Owner Name', 'N/A')}`")
+        lines.append(f"👨 Father: `{own.get(\"Father's Name\", 'N/A')}`")
+        lines.append(f"📋 Serial No: `{own.get('Owner Serial No', 'N/A')}`")
+        lines.append(f"🏛️ RTO: `{own.get('Registered RTO', 'N/A')}`")
+    
+    if 'Vehicle Details' in data:
+        veh = data['Vehicle Details']
+        lines.append("")
+        lines.append("🚘 *VEHICLE DETAILS*")
+        lines.append("─" * 25)
+        lines.append(f"🚙 Model: `{veh.get('Model Name', 'N/A')}`")
+        lines.append(f"🔧 Maker: `{veh.get('Maker Model', 'N/A')}`")
+        lines.append(f"📋 Class: `{veh.get('Vehicle Class', 'N/A')}`")
+        lines.append(f"⛽ Fuel: `{veh.get('Fuel Type', 'N/A')}`")
+        lines.append(f"🔩 Chassis: `{veh.get('Chassis Number', 'N/A')}`")
+        lines.append(f"⚙️ Engine: `{veh.get('Engine Number', 'N/A')}`")
+    
+    if 'Insurance Information' in data:
+        ins = data['Insurance Information']
+        lines.append("")
+        lines.append("🛡️ *INSURANCE DETAILS*")
+        lines.append("─" * 25)
+        lines.append(f"📅 Expiry: `{ins.get('Insurance Expiry', 'N/A')}`")
+        lines.append(f"📄 Policy No: `{ins.get('Insurance No', 'N/A')}`")
+        lines.append(f"🏢 Company: `{ins.get('Insurance Company', 'N/A')}`")
+    
+    if 'Important Dates & Validity' in data:
+        dates = data['Important Dates & Validity']
+        lines.append("")
+        lines.append("📅 *IMPORTANT DATES*")
+        lines.append("─" * 25)
+        lines.append(f"📆 Registration: `{dates.get('Registration Date', 'N/A')}`")
+        lines.append(f"⏳ Age: `{dates.get('Vehicle Age', 'N/A')}`")
+        lines.append(f"✅ Fitness Upto: `{dates.get('Fitness Upto', 'N/A')}`")
+        lines.append(f"💰 Tax Upto: `{dates.get('Tax Upto', 'N/A')}`")
+        lines.append(f"📋 PUC Upto: `{dates.get('PUC Upto', 'N/A')}`")
+        lines.append(f"🛡️ Insurance Upto: `{dates.get('Insurance Upto', 'N/A')}`")
+    
+    if 'Other Information' in data:
+        other = data['Other Information']
+        if other.get('Financer Name') and other.get('Financer Name') != 'NA':
+            lines.append("")
+            lines.append("ℹ️ *OTHER INFO*")
+            lines.append("─" * 25)
+            lines.append(f"🏦 Financer: `{other.get('Financer Name', 'N/A')}`")
+            lines.append(f"📦 Capacity: `{other.get('Cubic Capacity', 'N/A')}`")
+            lines.append(f"💺 Seating: `{other.get('Seating Capacity', 'N/A')}`")
+    
+    if 'Basic Card Info' in data:
+        basic = data['Basic Card Info']
+        lines.append("")
+        lines.append("📍 *RTO CONTACT*")
+        lines.append("─" * 25)
+        lines.append(f"🏛️ RTO: `{basic.get('City Name', 'N/A')} ({basic.get('Code', 'N/A')})`")
+        lines.append(f"📞 Phone: `{basic.get('Phone', 'N/A')}`")
+        lines.append(f"🌐 Website: `{basic.get('Website', 'N/A')}`")
+        lines.append(f"📍 Address: `{basic.get('Address', 'N/A')}`")
+    
+    lines.append("")
+    lines.append("═" * 40)
+    lines.append("🔥 *Powered by KUSHZNDR* 🔥")
+    
+    return "\n".join(lines)
+
+def export_result(data, query, query_type):
+    filename = f"{query_type}_{query}.txt"
     with open(filename, 'w', encoding='utf-8') as f:
-        f.write(f"🔥 {query_type.upper()} Report for {number}\n")
+        f.write(f"🔥 {query_type.upper()} Report for {query}\n")
         f.write("═" * 40 + "\n")
         f.write(json.dumps(data, indent=2, ensure_ascii=False))
     return filename
@@ -235,6 +400,12 @@ def log_search(user_id, username, first_name, query_type, query_value, data):
     elif query_type == "aadhaar":
         if data and "data" in data and "family_info" in data['data']:
             found = data['data']['family_info'].get('total_members', 0)
+    elif query_type == "gst":
+        if data and "gstin" in data:
+            found = 1
+    elif query_type == "vehicle":
+        if data and "registration_number" in data:
+            found = 1
     
     log_entry = f"""
 [{timestamp}] 
@@ -353,15 +524,17 @@ user_state = {}
 def send_welcome(message):
     chat_id = message.chat.id
     markup = InlineKeyboardMarkup(row_width=2)
-    btn1 = InlineKeyboardButton("📱 Number to Details", callback_data="num")
-    btn2 = InlineKeyboardButton("🆔 Aadhaar to Family", callback_data="aadhaar")
-    markup.add(btn1, btn2)
+    btn1 = InlineKeyboardButton("📱 Number", callback_data="num")
+    btn2 = InlineKeyboardButton("🆔 Aadhaar", callback_data="aadhaar")
+    btn3 = InlineKeyboardButton("🏢 GST", callback_data="gst")
+    btn4 = InlineKeyboardButton("🚗 Vehicle", callback_data="vehicle")
+    markup.add(btn1, btn2, btn3, btn4)
     
     bot.send_message(chat_id, 
                      "🔥 *KUSHZNDR OSINT BOT* 🔥\n\nChoose an option:",
                      reply_markup=markup, parse_mode='Markdown')
 
-@bot.callback_query_handler(func=lambda call: call.data in ['num', 'aadhaar'])
+@bot.callback_query_handler(func=lambda call: call.data in ['num', 'aadhaar', 'gst', 'vehicle'])
 def choose_option(call):
     chat_id = call.message.chat.id
     if call.data == 'num':
@@ -374,6 +547,16 @@ def choose_option(call):
                               chat_id, call.message.message_id, parse_mode='Markdown')
         bot.answer_callback_query(call.id)
         user_state[chat_id] = {'mode': 'aadhaar'}
+    elif call.data == 'gst':
+        bot.edit_message_text("🏢 *GST to Company Details*\n\nSend any 15-character GST number.\n\nExample: `07AABCF8078M1Z3`",
+                              chat_id, call.message.message_id, parse_mode='Markdown')
+        bot.answer_callback_query(call.id)
+        user_state[chat_id] = {'mode': 'gst'}
+    elif call.data == 'vehicle':
+        bot.edit_message_text("🚗 *Vehicle to Details*\n\nSend your vehicle registration number.\n\nExample: `MH12DE1433`",
+                              chat_id, call.message.message_id, parse_mode='Markdown')
+        bot.answer_callback_query(call.id)
+        user_state[chat_id] = {'mode': 'vehicle'}
 
 @bot.message_handler(commands=['stats'])
 def show_stats(message):
@@ -393,7 +576,7 @@ def show_logs(message):
     
     try:
         logs = get_recent_logs(10)
-        bot.send_message(message.chat.id, logs, parse_mode=None)  # No markdown
+        bot.send_message(message.chat.id, logs, parse_mode=None)
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ Error fetching logs: {e}")
         print(f"❌ LOGS ERROR: {e}", flush=True)
@@ -485,10 +668,68 @@ def handle_query(msg):
             with open(filename, 'rb') as f:
                 bot.send_document(chat_id, f, caption=f"📄 *Aadhaar Report for {aadhaar}*", parse_mode='Markdown')
             os.remove(filename)
+    
+    elif mode == 'gst':
+        gst = clean_gst(raw)
+        if len(gst) != 15:
+            bot.reply_to(msg, "❌ Invalid GST. Send exactly 15 characters.\nExample: `07AABCF8078M1Z3`", parse_mode='Markdown')
+            return
+        
+        bot.send_message(chat_id, f"⏳ Fetching company details for GST `{gst}`...", parse_mode='Markdown')
+        
+        data = fetch_api3(gst)
+        result = format_gst_result(data)
+        
+        log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, "gst", gst, data)
+        
+        if len(result) > 4096:
+            for i in range(0, len(result), 4096):
+                bot.send_message(chat_id, result[i:i+4096], parse_mode='Markdown', disable_web_page_preview=True)
+        else:
+            bot.send_message(chat_id, result, parse_mode='Markdown', disable_web_page_preview=True)
+        
+        if data and "error" not in data and data.get('gstin'):
+            filename = export_result(data, gst, "gst")
+            with open(filename, 'rb') as f:
+                bot.send_document(chat_id, f, caption=f"📄 *GST Report for {gst}*", parse_mode='Markdown')
+            os.remove(filename)
+    
+    elif mode == 'vehicle':
+        vehicle = clean_vehicle(raw)
+        if len(vehicle) < 8:
+            bot.reply_to(msg, "❌ Invalid registration number. Send proper format.\nExample: `MH12DE1433`", parse_mode='Markdown')
+            return
+        
+        bot.send_message(chat_id, f"⏳ Fetching vehicle details for `{vehicle}`...", parse_mode='Markdown')
+        
+        data = fetch_api4(vehicle)
+        result = format_vehicle_result(data)
+        
+        log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, "vehicle", vehicle, data)
+        
+        if len(result) > 4096:
+            for i in range(0, len(result), 4096):
+                bot.send_message(chat_id, result[i:i+4096], parse_mode='Markdown', disable_web_page_preview=True)
+        else:
+            bot.send_message(chat_id, result, parse_mode='Markdown', disable_web_page_preview=True)
+        
+        if data and "error" not in data and data.get('registration_number'):
+            filename = export_result(data, vehicle, "vehicle")
+            with open(filename, 'rb') as f:
+                bot.send_document(chat_id, f, caption=f"📄 *Vehicle Report for {vehicle}*", parse_mode='Markdown')
+            os.remove(filename)
 
 # ========= MAIN =========
 if __name__ == "__main__":
     Thread(target=run_server, daemon=True).start()
+    
+    try:
+        bot.remove_webhook()
+        print("✅ Webhook removed successfully")
+    except Exception as e:
+        print(f"⚠️ Webhook removal failed: {e}")
+    
+    time.sleep(2)
     
     print("🔥 KUSHZNDR 🔥")
     print(f"✅ Token: {BOT_TOKEN[:10]}...")
