@@ -16,9 +16,10 @@ ADMIN_ID = 6961291469
 bot = telebot.TeleBot(BOT_TOKEN)
 
 API1_URL = "https://tfqdeadlo-inddataapi.hf.space/search?mobile={}"
-API2_URL = "https://adhaar2info-family-noobster.com-dashbord63hh7qe4.workers.dev/?key=@noob11001&adhaar={}"
-API3_URL = "https://gst-pan-api.onrender.com/gstin-detail/{}"
-API4_URL = "https://vvvin-ng.vercel.app/lookup?rc={}"
+API2_URL = "https://number2info-noobster.com-dashbord63hh7qe4.workers.dev/?key=@noob11001&mobile={}"
+API3_URL = "https://adhaar2info-family-noobster.com-dashbord63hh7qe4.workers.dev/?key=@noob11001&adhaar={}"
+API4_URL = "https://gst-pan-api.onrender.com/gstin-detail/{}"
+API5_URL = "https://vvvin-ng.vercel.app/lookup?rc={}"
 
 LOG_FILE = "/tmp/bot_usage.log"
 
@@ -62,18 +63,58 @@ def clean_vehicle(raw):
     cleaned = re.sub(r'[^A-Za-z0-9]', '', raw)
     return cleaned.upper()
 
-def fetch_api1(number):
-    url = API1_URL.format(number)
+# ========= FETCH FUNCTIONS =========
+def fetch_merged_number(number):
+    """Fetch from both number APIs and merge results"""
+    merged_data = {
+        "success": False,
+        "data": [],
+        "sources": []
+    }
+    
+    # API 1
+    url1 = API1_URL.format(number)
     try:
-        resp = requests.get(url, timeout=15)
-        if resp.status_code == 200:
-            return resp.json()
-        return {"error": f"HTTP {resp.status_code}"}
+        resp1 = requests.get(url1, timeout=10)
+        if resp1.status_code == 200:
+            data1 = resp1.json()
+            if data1 and "data" in data1 and data1['data']:
+                for record in data1['data']:
+                    if record.get('mobile'):
+                        merged_data["data"].append(record)
+                merged_data["sources"].append("API1")
+                merged_data["success"] = True
     except Exception as e:
-        return {"error": str(e)}
+        print(f"⚠️ API1 failed: {e}", flush=True)
+    
+    # API 2
+    url2 = API2_URL.format(number)
+    try:
+        resp2 = requests.get(url2, timeout=10)
+        if resp2.status_code == 200:
+            data2 = resp2.json()
+            if data2 and "data" in data2 and data2['data']:
+                for record in data2['data']:
+                    if record.get('mobile'):
+                        # Check duplicate by mobile number
+                        if not any(r.get('mobile') == record.get('mobile') for r in merged_data["data"]):
+                            merged_data["data"].append(record)
+                merged_data["sources"].append("API2")
+                merged_data["success"] = True
+    except Exception as e:
+        print(f"⚠️ API2 failed: {e}", flush=True)
+    
+    # If both failed OR no data found
+    if not merged_data["success"] or len(merged_data["data"]) == 0:
+        return {"error": "No data found", "data": []}
+    
+    merged_data["found"] = len(merged_data["data"])
+    merged_data["sources_str"] = " + ".join(merged_data["sources"])
+    
+    return merged_data
 
 def fetch_api2(aadhaar):
-    url = API2_URL.format(aadhaar)
+    url = API3_URL.format(aadhaar)
     try:
         resp = requests.get(url, timeout=15)
         if resp.status_code == 200:
@@ -85,12 +126,11 @@ def fetch_api2(aadhaar):
         return {"error": str(e)}
 
 def fetch_api3(gst):
-    url = API3_URL.format(gst)
+    url = API4_URL.format(gst)
     try:
         resp = requests.get(url, timeout=15)
         if resp.status_code == 200:
             data = resp.json()
-            # Remove credit field if exists
             if 'credit' in data:
                 del data['credit']
             return data
@@ -99,7 +139,7 @@ def fetch_api3(gst):
         return {"error": str(e)}
 
 def fetch_api4(vehicle):
-    url = API4_URL.format(vehicle)
+    url = API5_URL.format(vehicle)
     try:
         resp = requests.get(url, timeout=15)
         if resp.status_code == 200:
@@ -122,52 +162,75 @@ def remove_dev_name(data):
     else:
         return data
 
-def format_number_result(data):
+# ========= FORMATTERS =========
+def format_merged_number_result(data):
     if not data or "error" in data:
         return f"❌ *Error:* {data.get('error', 'Unknown')}"
     
-    lines = ["🔥 *GET YOUR DETAILS BOYYY* 🔥"]
-    lines.append("═" * 35)
+    # Check if any data found
+    if not data.get('data') or len(data['data']) == 0:
+        return """
+😔 *Sorry, we can't find data from your input.*
+📭 *It's not in our database.*
+
+💡 *Try:*
+• Double-check the number (10 digits, no +91)
+• Try another number
+• Make sure the number is active
+
+🔥 *Powered by KUSHZNDR* 🔥
+"""
     
-    if isinstance(data, dict) and 'data' in data:
-        records = data['data']
-        if isinstance(records, list):
-            for idx, record in enumerate(records, 1):
-                lines.append(f"\n📌 *Record #{idx}*")
-                lines.append("─" * 25)
-                
-                field_map = {
-                    'mobile': '📱 Mobile',
-                    'name': '👤 Name',
-                    'fname': '👨 Father\'s Name',
-                    'address': '📍 Address',
-                    'email': '✉️ Email',
-                    'id': '🆔 ID'
-                }
-                
-                for key, label in field_map.items():
-                    value = record.get(key)
-                    if value and value != "None" and value != "":
-                        if key == 'address':
-                            value = value.replace('!', ' ').replace('  ', ' ').strip()
-                            value = value.title()
-                        lines.append(f"{label}: `{value}`")
-                
-                if record.get('address'):
-                    addr_clean = record['address'].replace('!', ' ').replace('  ', ' ').strip()
-                    addr_clean = addr_clean.replace(' ', '+')
-                    lines.append(f"🗺️ *Map*: [Click Here](https://maps.google.com/?q={addr_clean})")
+    lines = ["🔥 *ADVANCED NUMBER DETAILS* 🔥"]
+    lines.append("═" * 40)
+    
+    if data.get('sources_str'):
+        lines.append(f"📡 *Sources:* `{data['sources_str']}`")
+        lines.append(f"📊 *Total Records:* `{data.get('found', 0)}`")
+        lines.append("")
+    
+    if 'data' in data and data['data']:
+        for idx, record in enumerate(data['data'], 1):
+            lines.append(f"📌 *Record #{idx}*")
+            lines.append("─" * 30)
+            
+            field_map = {
+                'mobile': '📱 Mobile',
+                'name': '👤 Name',
+                'fname': '👨 Father\'s Name',
+                'address': '📍 Address',
+                'email': '✉️ Email',
+                'carrier': '📶 Carrier',
+                'circle': '🔄 Circle',
+                'alt': '📞 Alternate',
+                'id': '🆔 ID',
+                'fps_category': '📦 FPS Category',
+                'status': '📊 Status',
+                'registration_date': '📅 Registration Date'
+            }
+            
+            for key, label in field_map.items():
+                value = record.get(key)
+                if value and value != "None" and value != "" and value != "N/A":
+                    if key == 'address':
+                        value = value.replace('!', ' ').replace('  ', ' ').strip()
+                        value = value.title()
+                    lines.append(f"{label}: `{value}`")
+            
+            if record.get('address'):
+                addr_clean = record['address'].replace('!', ' ').replace('  ', ' ').strip()
+                addr_clean = addr_clean.replace(' ', '+')
+                lines.append(f"🗺️ *Map*: [Click Here](https://maps.google.com/?q={addr_clean})")
+            
+            lines.append("")
         
-        if data.get('found'):
-            lines.append("\n" + "═" * 35)
-            lines.append(f"📊 *Total Records Found:* `{data['found']}`")
+        lines.append("═" * 40)
+        lines.append(f"📡 *Data merged from: {data.get('sources_str', 'Unknown')}*")
     else:
-        for k, v in data.items():
-            if v and v != "None" and v != "":
-                lines.append(f"*{k}*: `{v}`")
+        lines.append("❌ No records found")
     
     lines.append("")
-    lines.append("═" * 35)
+    lines.append("═" * 40)
     lines.append("🔥 *Powered by KUSHZNDR* 🔥")
     
     return "\n".join(lines)
@@ -175,6 +238,20 @@ def format_number_result(data):
 def format_aadhaar_result(data):
     if not data or "error" in data:
         return f"❌ *Error:* {data.get('error', 'Unknown')}"
+    
+    # Check if no data
+    if not data.get('data') or not data['data'].get('aadhaar_info'):
+        return """
+😔 *Sorry, we can't find data from your input.*
+📭 *It's not in our database.*
+
+💡 *Try:*
+• Double-check the Aadhaar number (12 digits)
+• Try another Aadhaar number
+• Make sure the number is valid
+
+🔥 *Powered by KUSHZNDR* 🔥
+"""
     
     lines = ["🔥 *AADHAAR FAMILY DETAILS* 🔥"]
     lines.append("═" * 40)
@@ -258,6 +335,20 @@ def format_gst_result(data):
     if not data or "error" in data:
         return f"❌ *Error:* {data.get('error', 'Unknown')}"
     
+    # Check if no data
+    if not data.get('gstin') or not data.get('razorpay_info'):
+        return """
+😔 *Sorry, we can't find data from your input.*
+📭 *It's not in our database.*
+
+💡 *Try:*
+• Double-check the GST number (15 characters)
+• Try another GST number
+• Make sure the number is valid
+
+🔥 *Powered by KUSHZNDR* 🔥
+"""
+    
     lines = ["🔥 *GST COMPANY DETAILS* 🔥"]
     lines.append("═" * 40)
     lines.append("🔥 *Developed by: KUSHZNDR* 🔥")
@@ -305,6 +396,20 @@ def format_gst_result(data):
 def format_vehicle_result(data):
     if not data or "error" in data:
         return f"❌ *Error:* {data.get('error', 'Unknown')}"
+    
+    # Check if no data
+    if not data.get('registration_number'):
+        return """
+😔 *Sorry, we can't find data from your input.*
+📭 *It's not in our database.*
+
+💡 *Try:*
+• Double-check the registration number (e.g., MH12DE1433)
+• Try another vehicle number
+• Make sure the number is valid
+
+🔥 *Powered by KUSHZNDR* 🔥
+"""
     
     lines = ["🚗 *VEHICLE DETAILS* 🔥"]
     lines.append("═" * 40)
@@ -634,8 +739,9 @@ def handle_query(msg):
         
         bot.send_message(chat_id, f"⏳ Fetching details for `{number}`...", parse_mode='Markdown')
         
-        data = fetch_api1(number)
-        result = format_number_result(data)
+        # ===== MERGED FETCH =====
+        data = fetch_merged_number(number)
+        result = format_merged_number_result(data)
         
         log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, "number", number, data)
         
@@ -648,7 +754,7 @@ def handle_query(msg):
         if data and "error" not in data and data.get('data'):
             filename = export_result(data, number, "number")
             with open(filename, 'rb') as f:
-                bot.send_document(chat_id, f, caption=f"📄 *Number Report for {number}*", parse_mode='Markdown')
+                bot.send_document(chat_id, f, caption=f"📄 *Merged Report for {number}*", parse_mode='Markdown')
             os.remove(filename)
     
     elif mode == 'aadhaar':
@@ -679,75 +785,4 @@ def handle_query(msg):
     elif mode == 'gst':
         gst = clean_gst(raw)
         if len(gst) != 15:
-            bot.reply_to(msg, "❌ Invalid GST. Send exactly 15 characters.\nExample: `07AABCF8078M1Z3`", parse_mode='Markdown')
-            return
-        
-        bot.send_message(chat_id, f"⏳ Fetching company details for GST `{gst}`...", parse_mode='Markdown')
-        
-        data = fetch_api3(gst)
-        result = format_gst_result(data)
-        
-        log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, "gst", gst, data)
-        
-        if len(result) > 4096:
-            for i in range(0, len(result), 4096):
-                bot.send_message(chat_id, result[i:i+4096], parse_mode='Markdown', disable_web_page_preview=True)
-        else:
-            bot.send_message(chat_id, result, parse_mode='Markdown', disable_web_page_preview=True)
-        
-        if data and "error" not in data and data.get('gstin'):
-            filename = export_result(data, gst, "gst")
-            with open(filename, 'rb') as f:
-                bot.send_document(chat_id, f, caption=f"📄 *GST Report for {gst}*", parse_mode='Markdown')
-            os.remove(filename)
-    
-    elif mode == 'vehicle':
-        vehicle = clean_vehicle(raw)
-        if len(vehicle) < 8:
-            bot.reply_to(msg, "❌ Invalid registration number. Send proper format.\nExample: `MH12DE1433`", parse_mode='Markdown')
-            return
-        
-        bot.send_message(chat_id, f"⏳ Fetching vehicle details for `{vehicle}`...", parse_mode='Markdown')
-        
-        data = fetch_api4(vehicle)
-        result = format_vehicle_result(data)
-        
-        log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, "vehicle", vehicle, data)
-        
-        if len(result) > 4096:
-            for i in range(0, len(result), 4096):
-                bot.send_message(chat_id, result[i:i+4096], parse_mode='Markdown', disable_web_page_preview=True)
-        else:
-            bot.send_message(chat_id, result, parse_mode='Markdown', disable_web_page_preview=True)
-        
-        if data and "error" not in data and data.get('registration_number'):
-            filename = export_result(data, vehicle, "vehicle")
-            with open(filename, 'rb') as f:
-                bot.send_document(chat_id, f, caption=f"📄 *Vehicle Report for {vehicle}*", parse_mode='Markdown')
-            os.remove(filename)
-
-# ========= MAIN =========
-if __name__ == "__main__":
-    Thread(target=run_server, daemon=True).start()
-    
-    try:
-        bot.remove_webhook()
-        print("✅ Webhook removed successfully")
-    except Exception as e:
-        print(f"⚠️ Webhook removal failed: {e}")
-    
-    time.sleep(2)
-    
-    print("🔥 KUSHZNDR 🔥")
-    print(f"✅ Token: {BOT_TOKEN[:10]}...")
-    print(f"👑 Admin ID: {ADMIN_ID}")
-    print(f"📁 Log File: {LOG_FILE}")
-    print(f"🌐 HTTP Server Running on Port {os.environ.get('PORT', 10000)}")
-    print("⏳ Bot is starting...")
-    
-    while True:
-        try:
-            bot.infinity_polling(timeout=60, long_polling_timeout=60)
-        except Exception as e:
-            print(f"⚠️ Polling error: {e}")
-            time.sleep(5)
+            bot.reply_to(msg, "❌ Invalid GST. Send exactly 15 characters.\nExample: `07AABCF8078M1Z3`", parse
