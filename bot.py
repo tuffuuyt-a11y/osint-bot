@@ -317,11 +317,16 @@ def format_vehicle_result(data):
         lines.append("")
         lines.append("👤 *OWNERSHIP DETAILS*")
         lines.append("─" * 25)
-        lines.append(f"👤 Owner: `{own.get('Owner Name', 'N/A')}`")
-father_name = own.get("Father's Name", 'N/A')
-lines.append(f"👨 Father: `{father_name}`")
-lines.append(f"📋 Serial No: `{own.get('Owner Serial No', 'N/A')}`")
-        lines.append(f"🏛️ RTO: `{own.get('Registered RTO', 'N/A')}`")
+        
+        owner_name = own.get('Owner Name', 'N/A')
+        father_name = own.get("Father's Name", 'N/A')
+        serial_no = own.get('Owner Serial No', 'N/A')
+        rto = own.get('Registered RTO', 'N/A')
+        
+        lines.append(f"👤 Owner: `{owner_name}`")
+        lines.append(f"👨 Father: `{father_name}`")
+        lines.append(f"📋 Serial No: `{serial_no}`")
+        lines.append(f"🏛️ RTO: `{rto}`")
     
     if 'Vehicle Details' in data:
         veh = data['Vehicle Details']
@@ -358,11 +363,12 @@ lines.append(f"📋 Serial No: `{own.get('Owner Serial No', 'N/A')}`")
     
     if 'Other Information' in data:
         other = data['Other Information']
-        if other.get('Financer Name') and other.get('Financer Name') != 'NA':
+        financer = other.get('Financer Name', 'N/A')
+        if financer and financer != 'NA':
             lines.append("")
             lines.append("ℹ️ *OTHER INFO*")
             lines.append("─" * 25)
-            lines.append(f"🏦 Financer: `{other.get('Financer Name', 'N/A')}`")
+            lines.append(f"🏦 Financer: `{financer}`")
             lines.append(f"📦 Capacity: `{other.get('Cubic Capacity', 'N/A')}`")
             lines.append(f"💺 Seating: `{other.get('Seating Capacity', 'N/A')}`")
     
