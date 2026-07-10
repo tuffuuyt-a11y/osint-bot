@@ -30,7 +30,7 @@ def format_result(data):
     if not data or "error" in data:
         return f"❌ *Error:* {data.get('error', 'Unknown')}"
     
-    lines = ["🔥 *GET YOUR DETAILS BOYYY* 🔥"]
+    lines = ["🔥 *GET YOUR DETAILS BOYYY BY KUSHZNDR* 🔥"]
     lines.append("═" * 35)
     
     if isinstance(data, dict) and 'data' in data:
@@ -94,7 +94,7 @@ def export_result(data, number):
 def send_welcome(message):
     chat_id = message.chat.id
     bot.send_message(chat_id, 
-                     "🔥 *GET YOUR DETAILS BOYYY* 🔥\n\nSend any 10-digit number (without +91).\n\nExample: `9876543210`",
+                     "🔥 *GET YOUR DETAILS BOYYY KUSHZNDR* 🔥\n\nSend any 10-digit number (without +91).\n\nExample: `9876543210`",
                      parse_mode='Markdown')
 
 @bot.message_handler(func=lambda msg: True)
