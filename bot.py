@@ -22,7 +22,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
-        self.wfile.write(b"🔥 KUSHZNDR Bot is Alive!")
+        self.wfile.write("🔥 KUSHZNDR Bot is Alive!".encode('utf-8'))
 
 def run_server():
     port = int(os.environ.get("PORT", 10000))
