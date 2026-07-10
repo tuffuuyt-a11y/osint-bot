@@ -8,6 +8,7 @@ import datetime
 import sys
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ========= CONFIG =========
 BOT_TOKEN = "8885770583:AAEQSJh2cjHl0oPCq8Xhplx0YawzqDFR3Ok"
@@ -15,7 +16,9 @@ ADMIN_ID = 6961291469
 bot = telebot.TeleBot(BOT_TOKEN)
 
 API1_URL = "https://tfqdeadlo-inddataapi.hf.space/search?mobile={}"
-LOG_FILE = "bot_usage.log"
+API2_URL = "https://adhaar2info-family-noobster.com-dashbord63hh7qe4.workers.dev/?key=@noob11001&adhaar={}"
+
+LOG_FILE = "/tmp/bot_usage.log"
 
 # ========= HTTP SERVER (Keep Alive for Render) =========
 class HealthHandler(BaseHTTPRequestHandler):
@@ -45,6 +48,10 @@ def clean_number(raw):
         cleaned = cleaned[-10:]
     return cleaned[-10:]
 
+def clean_aadhaar(raw):
+    cleaned = re.sub(r'[^\d]', '', raw)
+    return cleaned[:12]  # Aadhaar 12 digits
+
 def fetch_api1(number):
     url = API1_URL.format(number)
     try:
@@ -55,7 +62,35 @@ def fetch_api1(number):
     except Exception as e:
         return {"error": str(e)}
 
-def format_result(data):
+def fetch_api2(aadhaar):
+    url = API2_URL.format(aadhaar)
+    try:
+        resp = requests.get(url, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            # Remove developer name and add KUSHZNDR
+            data = remove_dev_name(data)
+            return data
+        return {"error": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+def remove_dev_name(data):
+    """Recursively remove 'Dev' fields and replace with KUSHZNDR"""
+    if isinstance(data, dict):
+        new_dict = {}
+        for k, v in data.items():
+            if k == "Dev":
+                new_dict["Dev"] = "KUSHZNDR"
+            else:
+                new_dict[k] = remove_dev_name(v)
+        return new_dict
+    elif isinstance(data, list):
+        return [remove_dev_name(item) for item in data]
+    else:
+        return data
+
+def format_number_result(data):
     if not data or "error" in data:
         return f"❌ *Error:* {data.get('error', 'Unknown')}"
     
@@ -101,42 +136,115 @@ def format_result(data):
     
     return "\n".join(lines)
 
-def export_result(data, number):
-    filename = f"osint_{number}.txt"
+def format_aadhaar_result(data):
+    if not data or "error" in data:
+        return f"❌ *Error:* {data.get('error', 'Unknown')}"
+    
+    lines = ["🔥 *AADHAAR FAMILY DETAILS* 🔥"]
+    lines.append("═" * 40)
+    lines.append(f"🆔 *Aadhaar:* `{data.get('adhaar', 'N/A')}`")
+    lines.append(f"⏰ *Timestamp:* `{data.get('timestamp', 'N/A')}`")
+    lines.append("")
+    
+    # Aadhaar Info
+    if 'data' in data and 'aadhaar_info' in data['data']:
+        aadhaar_info = data['data']['aadhaar_info']
+        lines.append("📋 *AADHAAR RECORDS*")
+        lines.append("─" * 30)
+        lines.append(f"📊 *Total Records:* `{aadhaar_info.get('total_records', 0)}`")
+        lines.append("")
+        
+        for idx, record in enumerate(aadhaar_info.get('records', []), 1):
+            lines.append(f"📌 *Record #{idx}*")
+            lines.append("─" * 20)
+            lines.append(f"📱 Mobile: `{record.get('mobile', 'N/A')}`")
+            lines.append(f"👤 Name: `{record.get('name', 'N/A')}`")
+            lines.append(f"👨 Father: `{record.get('fname', 'N/A')}`")
+            lines.append(f"📧 Email: `{record.get('email', 'N/A')}`")
+            lines.append(f"📞 Alternate: `{record.get('alt', 'N/A')}`")
+            lines.append(f"🔄 Circle: `{record.get('circle', 'N/A')}`")
+            
+            # Clean address
+            address = record.get('address', '')
+            if address:
+                address = address.replace('!', ' ').replace('  ', ' ').strip()
+                lines.append(f"📍 Address: `{address}`")
+            lines.append("")
+    
+    # Family Info
+    if 'data' in data and 'family_info' in data['data']:
+        family_info = data['data']['family_info']
+        lines.append("👨‍👩‍👧‍👦 *FAMILY DETAILS*")
+        lines.append("─" * 30)
+        lines.append(f"👥 *Total Members:* `{family_info.get('total_members', 0)}`")
+        lines.append("")
+        
+        # Ration Card
+        if 'ration_card' in family_info:
+            rc = family_info['ration_card']
+            lines.append("📄 *Ration Card*")
+            lines.append("─" * 15)
+            lines.append(f"🏛️ State: `{rc.get('state_name', 'N/A')}`")
+            lines.append(f"🏙️ District: `{rc.get('district_name', 'N/A')}`")
+            lines.append(f"🆔 Card No: `{rc.get('ration_card_no', 'N/A')}`")
+            lines.append(f"📋 Scheme: `{rc.get('scheme_name', 'N/A')}`")
+            lines.append("")
+        
+        # Members
+        if 'members' in family_info:
+            lines.append("👨‍👩‍👧 *Family Members*")
+            lines.append("─" * 15)
+            for member in family_info['members']:
+                name = member.get('member_name', 'N/A')
+                mem_id = member.get('member_id', 'N/A')
+                sno = member.get('s_no', 'N/A')
+                lines.append(f"👤 *{sno}.* `{name}`")
+                lines.append(f"   ID: `{mem_id}`")
+            lines.append("")
+        
+        # Additional Info
+        if 'additional_info' in family_info:
+            ai = family_info['additional_info']
+            lines.append("ℹ️ *Additional Info*")
+            lines.append("─" * 15)
+            lines.append(f"🔁 Duplicate Aadhaar: `{ai.get('duplicate_aadhaar_beneficiary', False)}`")
+            lines.append(f"🏦 Central Repository: `{ai.get('exists_in_central_repository', False)}`")
+            lines.append(f"📦 FPS Category: `{ai.get('fps_category', 'N/A')}`")
+            lines.append(f"✅ IMPDS Allowed: `{ai.get('impds_transaction_allowed', False)}`")
+    
+    # Developer Credit
+    lines.append("")
+    lines.append("═" * 40)
+    lines.append("🔥 *Developed by: KUSHZNDR* 🔥")
+    
+    return "\n".join(lines)
+
+def export_result(data, number, query_type):
+    filename = f"{query_type}_{number}.txt"
     with open(filename, 'w', encoding='utf-8') as f:
-        f.write(f"🔥 OSINT Report for {number}\n")
+        f.write(f"🔥 {query_type.upper()} Report for {number}\n")
         f.write("═" * 40 + "\n")
-        if isinstance(data, dict) and 'data' in data:
-            for idx, record in enumerate(data['data'], 1):
-                f.write(f"\n📌 Record #{idx}\n")
-                f.write("─" * 25 + "\n")
-                for k, v in record.items():
-                    if v and v != "None":
-                        if k == 'address':
-                            v = v.replace('!', ' ').replace('  ', ' ').strip()
-                        f.write(f"{k}: {v}\n")
-        else:
-            f.write(str(data))
+        f.write(json.dumps(data, indent=2, ensure_ascii=False))
     return filename
 
 # ========= LOGGING =========
-def log_search(user_id, username, first_name, number, data):
+def log_search(user_id, username, first_name, query_type, query_value, data):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     found = 0
-    names = []
-    if data and "data" in data and isinstance(data['data'], list):
-        found = len(data['data'])
-        for record in data['data']:
-            if record.get('name'):
-                names.append(record['name'])
+    if query_type == "number":
+        if data and "data" in data and isinstance(data['data'], list):
+            found = len(data['data'])
+    elif query_type == "aadhaar":
+        if data and "data" in data and "family_info" in data['data']:
+            found = data['data']['family_info'].get('total_members', 0)
     
     log_entry = f"""
 [{timestamp}] 
+TYPE: {query_type.upper()}
 USER: {user_id} | @{username} | {first_name}
-NUMBER: {number}
+QUERY: {query_value}
 RECORDS_FOUND: {found}
-NAMES: {', '.join(names) if names else 'N/A'}
 FULL_RESPONSE: {str(data)[:200]}...
 {'-'*60}
 """
@@ -145,14 +253,14 @@ FULL_RESPONSE: {str(data)[:200]}...
         with open(LOG_FILE, 'a', encoding='utf-8') as f:
             f.write(log_entry)
             f.flush()
-        print(f"✅ LOGGED: {number}", flush=True)
+        print(f"✅ LOGGED: {query_type} | {query_value}", flush=True)
     except Exception as e:
         print(f"❌ LOG ERROR: {e}", flush=True)
     
-    print(f"📝 {number} | {found} records | @{username or 'NoUsername'}", flush=True)
+    print(f"📝 {query_type} | {query_value} | {found} records", flush=True)
     
     try:
-        bot.send_message(ADMIN_ID, f"🔔 *New Search*\nUser: @{username or 'NoUsername'}\nNumber: `{number}`\nRecords: {found}", parse_mode='Markdown')
+        bot.send_message(ADMIN_ID, f"🔔 *New {query_type.upper()} Search*\nUser: @{username or 'NoUsername'}\nQuery: `{query_value}`\nRecords: {found}", parse_mode='Markdown')
         print("✅ ALERT SENT", flush=True)
     except Exception as e:
         print(f"❌ ALERT FAILED: {e}", flush=True)
@@ -192,11 +300,11 @@ def get_usage_stats():
 
 def get_recent_logs(limit=10):
     if not os.path.exists(LOG_FILE):
-        return f"❌ Log file '{LOG_FILE}' does not exist yet. No searches recorded."
+        return f"❌ Log file does not exist yet."
     
     file_size = os.path.getsize(LOG_FILE)
     if file_size == 0:
-        return "📁 Log file exists but is EMPTY (0 bytes). No searches recorded yet."
+        return "📁 Log file is EMPTY (0 bytes)."
     
     try:
         with open(LOG_FILE, 'r', encoding='utf-8') as f:
@@ -205,12 +313,9 @@ def get_recent_logs(limit=10):
         return f"❌ Error reading log file: {e}"
     
     if not content.strip():
-        return "📁 Log file is empty. No searches recorded yet."
+        return "📁 Log file is empty."
     
     entries = content.split('-'*60)
-    if len(entries) <= 1:
-        return "📁 Log file has content but no complete entries yet. Try after some searches."
-    
     valid_entries = [e for e in entries if e.strip()]
     if not valid_entries:
         return "📁 No valid log entries found."
@@ -222,20 +327,24 @@ def get_recent_logs(limit=10):
     
     for idx, entry in enumerate(recent, 1):
         lines = entry.strip().split('\n')
+        type_line = ""
         user_line = ""
-        number_line = ""
+        query_line = ""
         records_line = ""
         
         for line in lines:
-            if 'USER:' in line:
+            if 'TYPE:' in line:
+                type_line = line.strip()
+            elif 'USER:' in line:
                 user_line = line.strip()
-            elif 'NUMBER:' in line:
-                number_line = line.strip()
+            elif 'QUERY:' in line:
+                query_line = line.strip()
             elif 'RECORDS_FOUND:' in line:
                 records_line = line.strip()
         
-        result += f"*{idx}.* {user_line}\n"
-        result += f"   {number_line}\n"
+        result += f"*{idx}.* {type_line}\n"
+        result += f"   {user_line}\n"
+        result += f"   {query_line}\n"
         result += f"   {records_line}\n\n"
     
     return result[:4000]
@@ -244,9 +353,32 @@ def get_recent_logs(limit=10):
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
+    markup = InlineKeyboardMarkup(row_width=2)
+    btn1 = InlineKeyboardButton("📱 Number to Details", callback_data="num")
+    btn2 = InlineKeyboardButton("🆔 Aadhaar to Family", callback_data="aadhaar")
+    markup.add(btn1, btn2)
+    
     bot.send_message(chat_id, 
-                     "🔥 *GET YOUR DETAILS BOYYY* 🔥\n\nSend any 10-digit number (without +91).\n\nExample: `9876543210`",
-                     parse_mode='Markdown')
+                     "🔥 *KUSHZNDR OSINT BOT* 🔥\n\nChoose an option:",
+                     reply_markup=markup, parse_mode='Markdown')
+
+@bot.callback_query_handler(func=lambda call: call.data in ['num', 'aadhaar'])
+def choose_option(call):
+    chat_id = call.message.chat.id
+    if call.data == 'num':
+        bot.edit_message_text("📱 *Number to Details*\n\nSend any 10-digit number (without +91).\n\nExample: `9876543210`",
+                              chat_id, call.message.message_id, parse_mode='Markdown')
+        bot.answer_callback_query(call.id)
+        # Set user state
+        user_state[chat_id] = {'mode': 'number'}
+    elif call.data == 'aadhaar':
+        bot.edit_message_text("🆔 *Aadhaar to Family Details*\n\nSend any 12-digit Aadhaar number.\n\nExample: `352283381852`",
+                              chat_id, call.message.message_id, parse_mode='Markdown')
+        bot.answer_callback_query(call.id)
+        user_state[chat_id] = {'mode': 'aadhaar'}
+
+# User state dictionary
+user_state = {}
 
 @bot.message_handler(commands=['stats'])
 def show_stats(message):
@@ -290,56 +422,80 @@ def test_log(message):
     
     try:
         with open(LOG_FILE, 'a', encoding='utf-8') as f:
-            f.write(f"\n[TEST ENTRY] {datetime.datetime.now()} - Manual test by admin\n")
+            f.write(f"\n[TEST] {datetime.datetime.now()} - Manual test\n")
             f.flush()
-        bot.reply_to(message, "✅ Test log written! Now check /logs")
+        bot.reply_to(message, "✅ Test log written! Check /logs")
         print("✅ TEST LOG WRITTEN", flush=True)
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {e}")
         print(f"❌ TEST FAILED: {e}", flush=True)
 
 @bot.message_handler(func=lambda msg: True)
-def handle_number(msg):
+def handle_query(msg):
     chat_id = msg.chat.id
     raw = msg.text.strip()
     
-    if ',' in raw or ' ' in raw:
-        numbers = [clean_number(x) for x in re.split(r'[, ]+', raw) if clean_number(x)]
-        if len(numbers) > 10:
-            bot.reply_to(msg, "⚠️ Max 10 numbers ek saath.")
+    # Check if user has selected mode
+    if chat_id not in user_state:
+        bot.reply_to(msg, "⚠️ First use /start to select an option.")
+        return
+    
+    mode = user_state[chat_id].get('mode', 'number')
+    
+    if mode == 'number':
+        # Number mode
+        number = clean_number(raw)
+        if len(number) != 10:
+            bot.reply_to(msg, "❌ Invalid number. Send exactly 10 digits (no +91).\nExample: `9876543210`", parse_mode='Markdown')
             return
         
-        bot.send_message(chat_id, f"⏳ Fetching {len(numbers)} numbers...")
-        for num in numbers[:10]:
-            data = fetch_api1(num)
-            result = format_result(data)
+        bot.send_message(chat_id, f"⏳ Fetching details for `{number}`...", parse_mode='Markdown')
+        
+        data = fetch_api1(number)
+        result = format_number_result(data)
+        
+        log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, "number", number, data)
+        
+        if len(result) > 4096:
+            for i in range(0, len(result), 4096):
+                bot.send_message(chat_id, result[i:i+4096], parse_mode='Markdown', disable_web_page_preview=True)
+        else:
             bot.send_message(chat_id, result, parse_mode='Markdown', disable_web_page_preview=True)
-            log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, num, data)
-        return
+        
+        if data and "error" not in data and data.get('data'):
+            filename = export_result(data, number, "number")
+            with open(filename, 'rb') as f:
+                bot.send_document(chat_id, f, caption=f"📄 *Number Report for {number}*", parse_mode='Markdown')
+            os.remove(filename)
     
-    number = clean_number(raw)
-    if len(number) != 10:
-        bot.reply_to(msg, "❌ Invalid. Send exactly 10 digits (no +91).\nExample: `9876543210`", parse_mode='Markdown')
-        return
+    elif mode == 'aadhaar':
+        # Aadhaar mode
+        aadhaar = clean_aadhaar(raw)
+        if len(aadhaar) != 12:
+            bot.reply_to(msg, "❌ Invalid Aadhaar. Send exactly 12 digits.\nExample: `352283381852`", parse_mode='Markdown')
+            return
+        
+        bot.send_message(chat_id, f"⏳ Fetching family details for Aadhaar `{aadhaar}`...", parse_mode='Markdown')
+        
+        data = fetch_api2(aadhaar)
+        result = format_aadhaar_result(data)
+        
+        log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, "aadhaar", aadhaar, data)
+        
+        if len(result) > 4096:
+            for i in range(0, len(result), 4096):
+                bot.send_message(chat_id, result[i:i+4096], parse_mode='Markdown', disable_web_page_preview=True)
+        else:
+            bot.send_message(chat_id, result, parse_mode='Markdown', disable_web_page_preview=True)
+        
+        if data and "error" not in data and data.get('success'):
+            filename = export_result(data, aadhaar, "aadhaar")
+            with open(filename, 'rb') as f:
+                bot.send_document(chat_id, f, caption=f"📄 *Aadhaar Report for {aadhaar}*", parse_mode='Markdown')
+            os.remove(filename)
     
-    bot.send_message(chat_id, f"⏳ Fetching for `{number}`...", parse_mode='Markdown')
-    
-    data = fetch_api1(number)
-    result = format_result(data)
-    
-    log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, number, data)
-    
-    if len(result) > 4096:
-        for i in range(0, len(result), 4096):
-            bot.send_message(chat_id, result[i:i+4096], parse_mode='Markdown', disable_web_page_preview=True)
-    else:
-        bot.send_message(chat_id, result, parse_mode='Markdown', disable_web_page_preview=True)
-    
-    if data and "error" not in data and data.get('data'):
-        filename = export_result(data, number)
-        with open(filename, 'rb') as f:
-            bot.send_document(chat_id, f, caption=f"📄 *Report for {number}*", parse_mode='Markdown')
-        os.remove(filename)
+    # Reset state after query
+    # user_state[chat_id] = {'mode': mode}  # Keep mode for next query
 
 # ========= MAIN =========
 if __name__ == "__main__":
@@ -350,6 +506,7 @@ if __name__ == "__main__":
     print(f"👑 Admin ID: {ADMIN_ID}")
     print(f"📁 Log File: {LOG_FILE}")
     print(f"🌐 HTTP Server Running on Port {os.environ.get('PORT', 10000)}")
+    print("⏳ Bot is starting...")
     
     while True:
         try:
