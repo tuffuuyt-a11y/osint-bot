@@ -72,7 +72,7 @@ def fetch_merged_number(number):
         "sources": []
     }
     
-    # API 1
+    # ===== API 1: Original =====
     url1 = API1_URL.format(number)
     try:
         resp1 = requests.get(url1, timeout=10)
@@ -82,25 +82,39 @@ def fetch_merged_number(number):
                 for record in data1['data']:
                     if record.get('mobile'):
                         merged_data["data"].append(record)
-                merged_data["sources"].append("API1")
-                merged_data["success"] = True
+                        merged_data["sources"].append("API1")
+                        merged_data["success"] = True
     except Exception as e:
         print(f"⚠️ API1 failed: {e}", flush=True)
     
-    # API 2
+    # ===== API 2: Advanced =====
     url2 = API2_URL.format(number)
     try:
         resp2 = requests.get(url2, timeout=10)
         if resp2.status_code == 200:
             data2 = resp2.json()
-            if data2 and "data" in data2 and data2['data']:
-                for record in data2['data']:
-                    if record.get('mobile'):
-                        # Check duplicate by mobile number
-                        if not any(r.get('mobile') == record.get('mobile') for r in merged_data["data"]):
-                            merged_data["data"].append(record)
-                merged_data["sources"].append("API2")
-                merged_data["success"] = True
+            # Check if API2 returned data
+            if data2 and data2.get('status') == 'success' and 'data' in data2:
+                # Extract subscriber data from API2 response
+                subscriber = data2['data'].get('subscriber')
+                if subscriber:
+                    # Convert to same format as API1 for consistency
+                    record = {
+                        'mobile': subscriber.get('mobile', number),
+                        'name': subscriber.get('name', 'N/A'),
+                        'fname': subscriber.get('father_name', 'N/A'),
+                        'address': subscriber.get('address', 'N/A'),
+                        'email': subscriber.get('email', 'N/A'),
+                        'alt': subscriber.get('alternate_number', 'N/A'),
+                        'circle': subscriber.get('circle', 'N/A'),
+                        'id': subscriber.get('id', 'N/A'),
+                        'carrier': subscriber.get('circle', 'N/A')
+                    }
+                    # Check duplicate by mobile number
+                    if not any(r.get('mobile') == record.get('mobile') for r in merged_data["data"]):
+                        merged_data["data"].append(record)
+                        merged_data["sources"].append("API2")
+                        merged_data["success"] = True
     except Exception as e:
         print(f"⚠️ API2 failed: {e}", flush=True)
     
@@ -108,6 +122,8 @@ def fetch_merged_number(number):
     if not merged_data["success"] or len(merged_data["data"]) == 0:
         return {"error": "No data found", "data": []}
     
+    # Remove duplicate sources
+    merged_data["sources"] = list(set(merged_data["sources"]))
     merged_data["found"] = len(merged_data["data"])
     merged_data["sources_str"] = " + ".join(merged_data["sources"])
     
@@ -203,10 +219,7 @@ def format_merged_number_result(data):
                 'carrier': '📶 Carrier',
                 'circle': '🔄 Circle',
                 'alt': '📞 Alternate',
-                'id': '🆔 ID',
-                'fps_category': '📦 FPS Category',
-                'status': '📊 Status',
-                'registration_date': '📅 Registration Date'
+                'id': '🆔 ID'
             }
             
             for key, label in field_map.items():
@@ -739,7 +752,6 @@ def handle_query(msg):
         
         bot.send_message(chat_id, f"⏳ Fetching details for `{number}`...", parse_mode='Markdown')
         
-        # ===== MERGED FETCH =====
         data = fetch_merged_number(number)
         result = format_merged_number_result(data)
         
