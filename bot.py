@@ -50,7 +50,7 @@ def clean_number(raw):
 
 def clean_aadhaar(raw):
     cleaned = re.sub(r'[^\d]', '', raw)
-    return cleaned[:12]  # Aadhaar 12 digits
+    return cleaned[:12]
 
 def fetch_api1(number):
     url = API1_URL.format(number)
@@ -68,7 +68,6 @@ def fetch_api2(aadhaar):
         resp = requests.get(url, timeout=15)
         if resp.status_code == 200:
             data = resp.json()
-            # Remove developer name and add KUSHZNDR
             data = remove_dev_name(data)
             return data
         return {"error": f"HTTP {resp.status_code}"}
@@ -76,7 +75,6 @@ def fetch_api2(aadhaar):
         return {"error": str(e)}
 
 def remove_dev_name(data):
-    """Recursively remove 'Dev' fields and replace with KUSHZNDR"""
     if isinstance(data, dict):
         new_dict = {}
         for k, v in data.items():
@@ -146,7 +144,6 @@ def format_aadhaar_result(data):
     lines.append(f"⏰ *Timestamp:* `{data.get('timestamp', 'N/A')}`")
     lines.append("")
     
-    # Aadhaar Info
     if 'data' in data and 'aadhaar_info' in data['data']:
         aadhaar_info = data['data']['aadhaar_info']
         lines.append("📋 *AADHAAR RECORDS*")
@@ -164,14 +161,12 @@ def format_aadhaar_result(data):
             lines.append(f"📞 Alternate: `{record.get('alt', 'N/A')}`")
             lines.append(f"🔄 Circle: `{record.get('circle', 'N/A')}`")
             
-            # Clean address
             address = record.get('address', '')
             if address:
                 address = address.replace('!', ' ').replace('  ', ' ').strip()
                 lines.append(f"📍 Address: `{address}`")
             lines.append("")
     
-    # Family Info
     if 'data' in data and 'family_info' in data['data']:
         family_info = data['data']['family_info']
         lines.append("👨‍👩‍👧‍👦 *FAMILY DETAILS*")
@@ -179,8 +174,8 @@ def format_aadhaar_result(data):
         lines.append(f"👥 *Total Members:* `{family_info.get('total_members', 0)}`")
         lines.append("")
         
-        # Ration Card
-        if 'ration_card' in family_info:
+        # Ration Card - CHECK IF NOT NONE
+        if 'ration_card' in family_info and family_info['ration_card'] is not None:
             rc = family_info['ration_card']
             lines.append("📄 *Ration Card*")
             lines.append("─" * 15)
@@ -189,8 +184,10 @@ def format_aadhaar_result(data):
             lines.append(f"🆔 Card No: `{rc.get('ration_card_no', 'N/A')}`")
             lines.append(f"📋 Scheme: `{rc.get('scheme_name', 'N/A')}`")
             lines.append("")
+        else:
+            lines.append("📄 *Ration Card:* `Not Available`")
+            lines.append("")
         
-        # Members
         if 'members' in family_info:
             lines.append("👨‍👩‍👧 *Family Members*")
             lines.append("─" * 15)
@@ -201,9 +198,11 @@ def format_aadhaar_result(data):
                 lines.append(f"👤 *{sno}.* `{name}`")
                 lines.append(f"   ID: `{mem_id}`")
             lines.append("")
+        else:
+            lines.append("👨‍👩‍👧 *Family Members:* `Not Available`")
+            lines.append("")
         
-        # Additional Info
-        if 'additional_info' in family_info:
+        if 'additional_info' in family_info and family_info['additional_info'] is not None:
             ai = family_info['additional_info']
             lines.append("ℹ️ *Additional Info*")
             lines.append("─" * 15)
@@ -212,7 +211,6 @@ def format_aadhaar_result(data):
             lines.append(f"📦 FPS Category: `{ai.get('fps_category', 'N/A')}`")
             lines.append(f"✅ IMPDS Allowed: `{ai.get('impds_transaction_allowed', False)}`")
     
-    # Developer Credit
     lines.append("")
     lines.append("═" * 40)
     lines.append("🔥 *Developed by: KUSHZNDR* 🔥")
@@ -350,6 +348,8 @@ def get_recent_logs(limit=10):
     return result[:4000]
 
 # ========= BOT HANDLERS =========
+user_state = {}
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
@@ -369,16 +369,12 @@ def choose_option(call):
         bot.edit_message_text("📱 *Number to Details*\n\nSend any 10-digit number (without +91).\n\nExample: `9876543210`",
                               chat_id, call.message.message_id, parse_mode='Markdown')
         bot.answer_callback_query(call.id)
-        # Set user state
         user_state[chat_id] = {'mode': 'number'}
     elif call.data == 'aadhaar':
         bot.edit_message_text("🆔 *Aadhaar to Family Details*\n\nSend any 12-digit Aadhaar number.\n\nExample: `352283381852`",
                               chat_id, call.message.message_id, parse_mode='Markdown')
         bot.answer_callback_query(call.id)
         user_state[chat_id] = {'mode': 'aadhaar'}
-
-# User state dictionary
-user_state = {}
 
 @bot.message_handler(commands=['stats'])
 def show_stats(message):
@@ -435,7 +431,6 @@ def handle_query(msg):
     chat_id = msg.chat.id
     raw = msg.text.strip()
     
-    # Check if user has selected mode
     if chat_id not in user_state:
         bot.reply_to(msg, "⚠️ First use /start to select an option.")
         return
@@ -443,7 +438,6 @@ def handle_query(msg):
     mode = user_state[chat_id].get('mode', 'number')
     
     if mode == 'number':
-        # Number mode
         number = clean_number(raw)
         if len(number) != 10:
             bot.reply_to(msg, "❌ Invalid number. Send exactly 10 digits (no +91).\nExample: `9876543210`", parse_mode='Markdown')
@@ -469,7 +463,6 @@ def handle_query(msg):
             os.remove(filename)
     
     elif mode == 'aadhaar':
-        # Aadhaar mode
         aadhaar = clean_aadhaar(raw)
         if len(aadhaar) != 12:
             bot.reply_to(msg, "❌ Invalid Aadhaar. Send exactly 12 digits.\nExample: `352283381852`", parse_mode='Markdown')
@@ -493,9 +486,6 @@ def handle_query(msg):
             with open(filename, 'rb') as f:
                 bot.send_document(chat_id, f, caption=f"📄 *Aadhaar Report for {aadhaar}*", parse_mode='Markdown')
             os.remove(filename)
-    
-    # Reset state after query
-    # user_state[chat_id] = {'mode': mode}  # Keep mode for next query
 
 # ========= MAIN =========
 if __name__ == "__main__":
