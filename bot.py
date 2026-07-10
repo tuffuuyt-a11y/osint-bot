@@ -5,6 +5,7 @@ import time
 import os
 import json
 import datetime
+import sys
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -16,8 +17,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 API1_URL = "https://tfqdeadlo-inddataapi.hf.space/search?mobile={}"
 LOG_FILE = "bot_usage.log"
 
-# ========= HTTP SERVER (Built-in - Keep Alive for Render) =========
-# ========= HTTP SERVER (Built-in - Keep Alive for Render) =========
+# ========= HTTP SERVER (Keep Alive for Render) =========
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -31,7 +31,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         self.end_headers()
     
     def log_message(self, format, *args):
-        return  # Silent logs - Render pe clean rakhne ke liye
+        return
 
 def run_server():
     port = int(os.environ.get("PORT", 10000))
@@ -141,15 +141,23 @@ FULL_RESPONSE: {str(data)[:200]}...
 {'-'*60}
 """
     
-    with open(LOG_FILE, 'a', encoding='utf-8') as f:
-        f.write(log_entry)
+    try:
+        with open(LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(log_entry)
+            f.flush()
+        print(f"✅ LOGGED: {number}", flush=True)
+    except Exception as e:
+        print(f"❌ LOG ERROR: {e}", flush=True)
     
-    print(f"📝 LOG: {user_id} | {number} | {found} records")
+    print(f"📝 {number} | {found} records | @{username or 'NoUsername'}", flush=True)
     
     try:
         bot.send_message(ADMIN_ID, f"🔔 *New Search*\nUser: @{username or 'NoUsername'}\nNumber: `{number}`\nRecords: {found}", parse_mode='Markdown')
-    except:
-        pass
+        print("✅ ALERT SENT", flush=True)
+    except Exception as e:
+        print(f"❌ ALERT FAILED: {e}", flush=True)
+    
+    sys.stdout.flush()
 
 def get_usage_stats():
     if not os.path.exists(LOG_FILE):
@@ -184,21 +192,51 @@ def get_usage_stats():
 
 def get_recent_logs(limit=10):
     if not os.path.exists(LOG_FILE):
-        return "No logs yet."
+        return f"❌ Log file '{LOG_FILE}' does not exist yet. No searches recorded."
     
-    with open(LOG_FILE, 'r', encoding='utf-8') as f:
-        content = f.read()
+    file_size = os.path.getsize(LOG_FILE)
+    if file_size == 0:
+        return "📁 Log file exists but is EMPTY (0 bytes). No searches recorded yet."
+    
+    try:
+        with open(LOG_FILE, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except Exception as e:
+        return f"❌ Error reading log file: {e}"
+    
+    if not content.strip():
+        return "📁 Log file is empty. No searches recorded yet."
     
     entries = content.split('-'*60)
-    recent = entries[-limit-1:-1]
+    if len(entries) <= 1:
+        return "📁 Log file has content but no complete entries yet. Try after some searches."
+    
+    valid_entries = [e for e in entries if e.strip()]
+    if not valid_entries:
+        return "📁 No valid log entries found."
+    
+    recent = valid_entries[-limit:] if len(valid_entries) >= limit else valid_entries
     
     result = f"📋 *LAST {len(recent)} SEARCHES:*\n\n"
-    for entry in recent:
+    result += "═" * 30 + "\n"
+    
+    for idx, entry in enumerate(recent, 1):
         lines = entry.strip().split('\n')
+        user_line = ""
+        number_line = ""
+        records_line = ""
+        
         for line in lines:
-            if 'USER:' in line or 'NUMBER:' in line or 'RECORDS_FOUND:' in line:
-                result += line.strip() + '\n'
-        result += '\n'
+            if 'USER:' in line:
+                user_line = line.strip()
+            elif 'NUMBER:' in line:
+                number_line = line.strip()
+            elif 'RECORDS_FOUND:' in line:
+                records_line = line.strip()
+        
+        result += f"*{idx}.* {user_line}\n"
+        result += f"   {number_line}\n"
+        result += f"   {records_line}\n\n"
     
     return result[:4000]
 
@@ -223,8 +261,15 @@ def show_logs(message):
     if message.from_user.id != ADMIN_ID:
         bot.reply_to(message, "❌ Unauthorized.")
         return
-    logs = get_recent_logs(10)
-    bot.send_message(message.chat.id, logs, parse_mode='Markdown')
+    
+    bot.send_message(message.chat.id, "⏳ Fetching logs...")
+    
+    try:
+        logs = get_recent_logs(10)
+        bot.send_message(message.chat.id, logs, parse_mode='Markdown')
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Error fetching logs: {e}")
+        print(f"❌ LOGS ERROR: {e}", flush=True)
 
 @bot.message_handler(commands=['logfile'])
 def send_log_file(message):
@@ -236,6 +281,22 @@ def send_log_file(message):
             bot.send_document(message.chat.id, f, caption="📄 *Complete Log File*", parse_mode='Markdown')
     else:
         bot.reply_to(message, "No log file yet.")
+
+@bot.message_handler(commands=['testlog'])
+def test_log(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "❌ Unauthorized.")
+        return
+    
+    try:
+        with open(LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(f"\n[TEST ENTRY] {datetime.datetime.now()} - Manual test by admin\n")
+            f.flush()
+        bot.reply_to(message, "✅ Test log written! Now check /logs")
+        print("✅ TEST LOG WRITTEN", flush=True)
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {e}")
+        print(f"❌ TEST FAILED: {e}", flush=True)
 
 @bot.message_handler(func=lambda msg: True)
 def handle_number(msg):
@@ -282,7 +343,6 @@ def handle_number(msg):
 
 # ========= MAIN =========
 if __name__ == "__main__":
-    # HTTP server background mein chalao
     Thread(target=run_server, daemon=True).start()
     
     print("🔥 KUSHZNDR 🔥")
