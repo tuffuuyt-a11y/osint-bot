@@ -5,14 +5,27 @@ import time
 import os
 import json
 import datetime
+from threading import Thread
+from flask import Flask
 
 # ========= CONFIG =========
 BOT_TOKEN = "8885770583:AAEQSJh2cjHl0oPCq8Xhplx0YawzqDFR3Ok"
-ADMIN_ID = 6961291469  # TERI USER ID
+ADMIN_ID = 6961291469
 bot = telebot.TeleBot(BOT_TOKEN)
 
 API1_URL = "https://tfqdeadlo-inddataapi.hf.space/search?mobile={}"
 LOG_FILE = "bot_usage.log"
+
+# ========= FLASK SERVER (For Render Keep-Alive) =========
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return "🔥 KUSHZNDR Bot is Alive!", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    flask_app.run(host='0.0.0.0', port=port)
 
 # ========= HELPERS =========
 def clean_number(raw):
@@ -35,7 +48,7 @@ def format_result(data):
     if not data or "error" in data:
         return f"❌ *Error:* {data.get('error', 'Unknown')}"
     
-    lines = ["🔥 *GET YOUR DETAILS BY KUSHZNDR* 🔥"]
+    lines = ["🔥 *GET YOUR DETAILS BOYYY* 🔥"]
     lines.append("═" * 35)
     
     if isinstance(data, dict) and 'data' in data:
@@ -95,7 +108,7 @@ def export_result(data, number):
             f.write(str(data))
     return filename
 
-# ========= LOGGING SYSTEM =========
+# ========= LOGGING =========
 def log_search(user_id, username, first_name, number, data):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -122,7 +135,6 @@ FULL_RESPONSE: {str(data)[:200]}...
     
     print(f"📝 LOG: {user_id} | {number} | {found} records")
     
-    # Send alert to admin
     try:
         bot.send_message(ADMIN_ID, f"🔔 *New Search*\nUser: @{username or 'NoUsername'}\nNumber: `{number}`\nRecords: {found}", parse_mode='Markdown')
     except:
@@ -219,7 +231,6 @@ def handle_number(msg):
     chat_id = msg.chat.id
     raw = msg.text.strip()
     
-    # Multiple numbers
     if ',' in raw or ' ' in raw:
         numbers = [clean_number(x) for x in re.split(r'[, ]+', raw) if clean_number(x)]
         if len(numbers) > 10:
@@ -231,12 +242,9 @@ def handle_number(msg):
             data = fetch_api1(num)
             result = format_result(data)
             bot.send_message(chat_id, result, parse_mode='Markdown', disable_web_page_preview=True)
-            
-            # Log each search
             log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, num, data)
         return
     
-    # Single number
     number = clean_number(raw)
     if len(number) != 10:
         bot.reply_to(msg, "❌ Invalid. Send exactly 10 digits (no +91).\nExample: `9876543210`", parse_mode='Markdown')
@@ -247,7 +255,6 @@ def handle_number(msg):
     data = fetch_api1(number)
     result = format_result(data)
     
-    # LOG THIS SEARCH
     log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, number, data)
     
     if len(result) > 4096:
@@ -264,10 +271,15 @@ def handle_number(msg):
 
 # ========= MAIN =========
 if __name__ == "__main__":
+    # Flask server background mein chalao
+    Thread(target=run_flask, daemon=True).start()
+    
     print("🔥 KUSHZNDR 🔥")
     print(f"✅ Token: {BOT_TOKEN[:10]}...")
     print(f"👑 Admin ID: {ADMIN_ID}")
     print(f"📁 Log File: {LOG_FILE}")
+    print(f"🌐 Flask Server Running on Port {os.environ.get('PORT', 10000)}")
+    
     while True:
         try:
             bot.infinity_polling(timeout=60, long_polling_timeout=60)
