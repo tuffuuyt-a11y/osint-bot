@@ -2,10 +2,10 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 import re
-import time
+import os
+import json
 
-# ========= CONFIG =========
-BOT_TOKEN = "8885770583:AAEQSJh2cjHl0oPCq8Xhplx0YawzqDFR3Ok"  # TERA TOKEN
+BOT_TOKEN = "8885770583:AAEQSJh2cjHl0oPCq8Xhplx0YawzqDFR3Ok"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 API1_URL = "https://tfqdeadlo-inddataapi.hf.space/search?mobile={}"
@@ -13,7 +13,6 @@ API2_URL = "https://number2info-noobster.com-dashbord63hh7qe4.workers.dev/?key=@
 
 user_state = {}
 
-# ========= HELPERS =========
 def clean_number(raw):
     cleaned = re.sub(r'[^\d]', '', raw)
     if cleaned.startswith('91') and len(cleaned) > 10:
@@ -43,7 +42,6 @@ def fetch_api2(number):
 def format_result(data, api_name):
     if not data or "error" in data:
         return f"❌ {api_name} Error: {data.get('error', 'Unknown')}"
-    
     lines = [f"📡 *{api_name} Results:*"]
     if isinstance(data, dict):
         for k, v in data.items():
@@ -59,10 +57,8 @@ def format_result(data, api_name):
             lines.append(f"*{idx+1}.* `{item}`")
     else:
         lines.append(f"`{data}`")
-    
     return "\n".join(lines)
 
-# ========= HANDLERS =========
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
@@ -88,37 +84,25 @@ def handle_number(msg):
     if chat_id not in user_state:
         bot.reply_to(msg, "⚠️ First use /start to select API.")
         return
-    
     raw = msg.text.strip()
     number = clean_number(raw)
     if len(number) != 10:
         bot.reply_to(msg, "❌ Invalid number. Send exactly 10 digits (no +91).")
         return
-    
     api_choice = user_state[chat_id].get('api', 'api1')
     bot.send_message(chat_id, f"⏳ Fetching for `{number}`...", parse_mode='Markdown')
-    
     if api_choice == 'api1':
         data = fetch_api1(number)
         result = format_result(data, "API 1 (HF)")
     else:
         data = fetch_api2(number)
         result = format_result(data, "API 2 (Workers)")
-    
-    # Send result with formatting
     if len(result) > 4096:
         for i in range(0, len(result), 4096):
             bot.send_message(chat_id, result[i:i+4096], parse_mode='Markdown')
     else:
         bot.send_message(chat_id, result, parse_mode='Markdown')
 
-# ========= MAIN =========
 if __name__ == "__main__":
-    print("🔥 Bot Running...")
-    print(f"✅ Token: {BOT_TOKEN[:10]}...")
-    while True:
-        try:
-            bot.infinity_polling(timeout=60, long_polling_timeout=60)
-        except Exception as e:
-            print(f"⚠️ Polling error: {e}")
-            time.sleep(5)
+    print("🔥 Sir Kanha Bot Running...")
+    bot.infinity_polling()
