@@ -174,7 +174,6 @@ def format_aadhaar_result(data):
         lines.append(f"👥 *Total Members:* `{family_info.get('total_members', 0)}`")
         lines.append("")
         
-        # Ration Card - CHECK IF NOT NONE
         if 'ration_card' in family_info and family_info['ration_card'] is not None:
             rc = family_info['ration_card']
             lines.append("📄 *Ration Card*")
@@ -298,7 +297,7 @@ def get_usage_stats():
 
 def get_recent_logs(limit=10):
     if not os.path.exists(LOG_FILE):
-        return f"❌ Log file does not exist yet."
+        return "❌ Log file does not exist yet."
     
     file_size = os.path.getsize(LOG_FILE)
     if file_size == 0:
@@ -320,8 +319,8 @@ def get_recent_logs(limit=10):
     
     recent = valid_entries[-limit:] if len(valid_entries) >= limit else valid_entries
     
-    result = f"📋 *LAST {len(recent)} SEARCHES:*\n\n"
-    result += "═" * 30 + "\n"
+    result = "📋 LAST " + str(len(recent)) + " SEARCHES:\n\n"
+    result += "=" * 30 + "\n"
     
     for idx, entry in enumerate(recent, 1):
         lines = entry.strip().split('\n')
@@ -340,10 +339,10 @@ def get_recent_logs(limit=10):
             elif 'RECORDS_FOUND:' in line:
                 records_line = line.strip()
         
-        result += f"*{idx}.* {type_line}\n"
-        result += f"   {user_line}\n"
-        result += f"   {query_line}\n"
-        result += f"   {records_line}\n\n"
+        result += str(idx) + ". " + type_line + "\n"
+        result += "   " + user_line + "\n"
+        result += "   " + query_line + "\n"
+        result += "   " + records_line + "\n\n"
     
     return result[:4000]
 
@@ -394,7 +393,7 @@ def show_logs(message):
     
     try:
         logs = get_recent_logs(10)
-        bot.send_message(message.chat.id, logs, parse_mode='Markdown')
+        bot.send_message(message.chat.id, logs, parse_mode=None)  # No markdown
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ Error fetching logs: {e}")
         print(f"❌ LOGS ERROR: {e}", flush=True)
