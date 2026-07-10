@@ -785,4 +785,75 @@ def handle_query(msg):
     elif mode == 'gst':
         gst = clean_gst(raw)
         if len(gst) != 15:
-bot.reply_to(msg, "❌ Invalid GST. Send exactly 15 characters.\nExample: `07AABCF8078M1Z3`", parse_mode='Markdown')
+            bot.reply_to(msg, "❌ Invalid GST. Send exactly 15 characters.\nExample: `07AABCF8078M1Z3`", parse_mode='Markdown')
+            return
+        
+        bot.send_message(chat_id, f"⏳ Fetching company details for GST `{gst}`...", parse_mode='Markdown')
+        
+        data = fetch_api3(gst)
+        result = format_gst_result(data)
+        
+        log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, "gst", gst, data)
+        
+        if len(result) > 4096:
+            for i in range(0, len(result), 4096):
+                bot.send_message(chat_id, result[i:i+4096], parse_mode='Markdown', disable_web_page_preview=True)
+        else:
+            bot.send_message(chat_id, result, parse_mode='Markdown', disable_web_page_preview=True)
+        
+        if data and "error" not in data and data.get('gstin'):
+            filename = export_result(data, gst, "gst")
+            with open(filename, 'rb') as f:
+                bot.send_document(chat_id, f, caption=f"📄 *GST Report for {gst}*", parse_mode='Markdown')
+            os.remove(filename)
+    
+    elif mode == 'vehicle':
+        vehicle = clean_vehicle(raw)
+        if len(vehicle) < 8:
+            bot.reply_to(msg, "❌ Invalid registration number. Send proper format.\nExample: `MH12DE1433`", parse_mode='Markdown')
+            return
+        
+        bot.send_message(chat_id, f"⏳ Fetching vehicle details for `{vehicle}`...", parse_mode='Markdown')
+        
+        data = fetch_api4(vehicle)
+        result = format_vehicle_result(data)
+        
+        log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, "vehicle", vehicle, data)
+        
+        if len(result) > 4096:
+            for i in range(0, len(result), 4096):
+                bot.send_message(chat_id, result[i:i+4096], parse_mode='Markdown', disable_web_page_preview=True)
+        else:
+            bot.send_message(chat_id, result, parse_mode='Markdown', disable_web_page_preview=True)
+        
+        if data and "error" not in data and data.get('registration_number'):
+            filename = export_result(data, vehicle, "vehicle")
+            with open(filename, 'rb') as f:
+                bot.send_document(chat_id, f, caption=f"📄 *Vehicle Report for {vehicle}*", parse_mode='Markdown')
+            os.remove(filename)
+
+# ========= MAIN =========
+if __name__ == "__main__":
+    Thread(target=run_server, daemon=True).start()
+    
+    try:
+        bot.remove_webhook()
+        print("✅ Webhook removed successfully")
+    except Exception as e:
+        print(f"⚠️ Webhook removal failed: {e}")
+    
+    time.sleep(2)
+    
+    print("🔥 KUSHZNDR 🔥")
+    print(f"✅ Token: {BOT_TOKEN[:10]}...")
+    print(f"👑 Admin ID: {ADMIN_ID}")
+    print(f"📁 Log File: {LOG_FILE}")
+    print(f"🌐 HTTP Server Running on Port {os.environ.get('PORT', 10000)}")
+    print("⏳ Bot is starting...")
+    
+    while True:
+        try:
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"⚠️ Polling error: {e}")
+            time.sleep(5)
