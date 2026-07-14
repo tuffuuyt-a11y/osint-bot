@@ -15,8 +15,36 @@ BOT_TOKEN = "8885770583:AAEQSJh2cjHl0oPCq8Xhplx0YawzqDFR3Ok"
 ADMIN_ID = 6961291469
 bot = telebot.TeleBot(BOT_TOKEN)
 
-API1_URL = "https://tfqdeadlo-inddataapi.hf.space/search?mobile={}"
-API2_URL = "https://number2info-noobster.com-dashbord63hh7qe4.workers.dev/?key=@noob11001&mobile={}"
+# ========= 5 NUMBER APIs =========
+API_LIST = [
+    {
+        "name": "API1",
+        "url": "https://tfqdeadlo-inddataapi.hf.space/search?mobile={}",
+        "type": "query_param"
+    },
+    {
+        "name": "API2",
+        "url": "https://number2info-noobster.com-dashbord63hh7qe4.workers.dev/?key=@noob11001&mobile={}",
+        "type": "query_param"
+    },
+    {
+        "name": "API3",
+        "url": "https://tfqdeadlo-inddataapi.hf.space/search?mobile={}",
+        "type": "query_param"
+    },
+    {
+        "name": "API4",
+        "url": "https://tfqdeadlo-inddataapi.hf.space/search?mobile={}",
+        "type": "query_param"
+    },
+    {
+        "name": "API5",
+        "url": "https://tfqdeadlo-850crfastsearch.hf.space/search/{}",
+        "type": "path_param"
+    }
+]
+
+# Other APIs (Aadhaar, GST, Vehicle - same as before)
 API3_URL = "https://adhaar2info-family-noobster.com-dashbord63hh7qe4.workers.dev/?key=@noob11001&adhaar={}"
 API4_URL = "https://gst-pan-api.onrender.com/gstin-detail/{}"
 API5_URL = "https://vvvin-ng.vercel.app/lookup?rc={}"
@@ -64,70 +92,61 @@ def clean_vehicle(raw):
     return cleaned.upper()
 
 # ========= FETCH FUNCTIONS =========
-def fetch_merged_number(number):
-    """Fetch from both number APIs and merge results"""
-    merged_data = {
-        "success": False,
-        "data": [],
-        "sources": []
-    }
-    
-    # ===== API 1: Original =====
-    url1 = API1_URL.format(number)
+def fetch_single_api(api_config, number):
+    """Fetch data from a single API"""
     try:
-        resp1 = requests.get(url1, timeout=10)
-        if resp1.status_code == 200:
-            data1 = resp1.json()
-            if data1 and "data" in data1 and data1['data']:
-                for record in data1['data']:
-                    if record.get('mobile'):
-                        merged_data["data"].append(record)
-                        merged_data["sources"].append("API1")
-                        merged_data["success"] = True
+        if api_config["type"] == "query_param":
+            url = api_config["url"].format(number)
+        else:  # path_param
+            url = api_config["url"].format(number)
+        
+        response = requests.get(url, timeout=8)
+        if response.status_code == 200:
+            data = response.json()
+            # Check if API returned valid data
+            if data and "error" not in data:
+                # For API5 specific format
+                if api_config["name"] == "API5" and data.get("status") == "success":
+                    return {"success": True, "data": data.get("data"), "source": api_config["name"]}
+                # For other APIs with 'data' field
+                elif "data" in data and data["data"]:
+                    return {"success": True, "data": data["data"], "source": api_config["name"]}
+                # For APIs with direct subscriber data
+                elif "subscriber" in data:
+                    return {"success": True, "data": data["subscriber"], "source": api_config["name"]}
+        return {"success": False, "data": None, "source": api_config["name"]}
     except Exception as e:
-        print(f"⚠️ API1 failed: {e}", flush=True)
+        print(f"⚠️ {api_config['name']} failed: {e}", flush=True)
+        return {"success": False, "data": None, "source": api_config["name"]}
+
+def fetch_all_apis(number):
+    """Fetch from all number APIs and pick the best result"""
+    results = []
     
-    # ===== API 2: Advanced =====
-    url2 = API2_URL.format(number)
-    try:
-        resp2 = requests.get(url2, timeout=10)
-        if resp2.status_code == 200:
-            data2 = resp2.json()
-            # Check if API2 returned data
-            if data2 and data2.get('status') == 'success' and 'data' in data2:
-                # Extract subscriber data from API2 response
-                subscriber = data2['data'].get('subscriber')
-                if subscriber:
-                    # Convert to same format as API1 for consistency
-                    record = {
-                        'mobile': subscriber.get('mobile', number),
-                        'name': subscriber.get('name', 'N/A'),
-                        'fname': subscriber.get('father_name', 'N/A'),
-                        'address': subscriber.get('address', 'N/A'),
-                        'email': subscriber.get('email', 'N/A'),
-                        'alt': subscriber.get('alternate_number', 'N/A'),
-                        'circle': subscriber.get('circle', 'N/A'),
-                        'id': subscriber.get('id', 'N/A'),
-                        'carrier': subscriber.get('circle', 'N/A')
-                    }
-                    # Check duplicate by mobile number
-                    if not any(r.get('mobile') == record.get('mobile') for r in merged_data["data"]):
-                        merged_data["data"].append(record)
-                        merged_data["sources"].append("API2")
-                        merged_data["success"] = True
-    except Exception as e:
-        print(f"⚠️ API2 failed: {e}", flush=True)
+    for api in API_LIST:
+        result = fetch_single_api(api, number)
+        if result["success"] and result["data"]:
+            results.append(result)
     
-    # If both failed OR no data found
-    if not merged_data["success"] or len(merged_data["data"]) == 0:
+    if not results:
         return {"error": "No data found", "data": []}
     
-    # Remove duplicate sources
-    merged_data["sources"] = list(set(merged_data["sources"]))
-    merged_data["found"] = len(merged_data["data"])
-    merged_data["sources_str"] = " + ".join(merged_data["sources"])
+    # Pick the API with most data fields
+    best_result = max(results, key=lambda x: len(x["data"]) if isinstance(x["data"], dict) else 0)
     
-    return merged_data
+    # Format data for consistency
+    if isinstance(best_result["data"], dict):
+        # Convert to list format for display
+        formatted_data = [best_result["data"]]
+    else:
+        formatted_data = best_result["data"] if isinstance(best_result["data"], list) else []
+    
+    return {
+        "success": True,
+        "data": formatted_data,
+        "source": best_result["source"],
+        "found": len(formatted_data)
+    }
 
 def fetch_api2(aadhaar):
     url = API3_URL.format(aadhaar)
@@ -179,7 +198,7 @@ def remove_dev_name(data):
         return data
 
 # ========= FORMATTERS =========
-def format_merged_number_result(data):
+def format_number_result(data):
     if not data or "error" in data:
         return f"❌ *Error:* {data.get('error', 'Unknown')}"
     
@@ -200,48 +219,47 @@ def format_merged_number_result(data):
     lines = ["🔥 *ADVANCED NUMBER DETAILS* 🔥"]
     lines.append("═" * 40)
     
-    if data.get('sources_str'):
-        lines.append(f"📡 *Sources:* `{data['sources_str']}`")
+    if data.get('source'):
+        lines.append(f"📡 *Source:* `{data['source']}`")
         lines.append(f"📊 *Total Records:* `{data.get('found', 0)}`")
         lines.append("")
     
-    if 'data' in data and data['data']:
-        for idx, record in enumerate(data['data'], 1):
-            lines.append(f"📌 *Record #{idx}*")
-            lines.append("─" * 30)
-            
-            field_map = {
-                'mobile': '📱 Mobile',
-                'name': '👤 Name',
-                'fname': '👨 Father\'s Name',
-                'address': '📍 Address',
-                'email': '✉️ Email',
-                'carrier': '📶 Carrier',
-                'circle': '🔄 Circle',
-                'alt': '📞 Alternate',
-                'id': '🆔 ID'
-            }
-            
-            for key, label in field_map.items():
-                value = record.get(key)
-                if value and value != "None" and value != "" and value != "N/A":
-                    if key == 'address':
-                        value = value.replace('!', ' ').replace('  ', ' ').strip()
-                        value = value.title()
-                    lines.append(f"{label}: `{value}`")
-            
-            if record.get('address'):
-                addr_clean = record['address'].replace('!', ' ').replace('  ', ' ').strip()
-                addr_clean = addr_clean.replace(' ', '+')
-                lines.append(f"🗺️ *Map*: [Click Here](https://maps.google.com/?q={addr_clean})")
-            
-            lines.append("")
+    for idx, record in enumerate(data['data'], 1):
+        lines.append(f"📌 *Record #{idx}*")
+        lines.append("─" * 30)
         
-        lines.append("═" * 40)
-        lines.append(f"📡 *Data merged from: {data.get('sources_str', 'Unknown')}*")
-    else:
-        lines.append("❌ No records found")
+        field_map = {
+            'mobile': '📱 Mobile',
+            'name': '👤 Name',
+            'fname': '👨 Father\'s Name',
+            'address': '📍 Address',
+            'email': '✉️ Email',
+            'carrier': '📶 Carrier',
+            'circle': '🔄 Circle',
+            'alt': '📞 Alternate',
+            'id': '🆔 ID',
+            'fps_category': '📦 FPS Category',
+            'status': '📊 Status',
+            'registration_date': '📅 Registration Date'
+        }
+        
+        for key, label in field_map.items():
+            value = record.get(key)
+            if value and value != "None" and value != "" and value != "N/A":
+                if key == 'address':
+                    value = value.replace('!', ' ').replace('  ', ' ').strip()
+                    value = value.title()
+                lines.append(f"{label}: `{value}`")
+        
+        if record.get('address'):
+            addr_clean = record['address'].replace('!', ' ').replace('  ', ' ').strip()
+            addr_clean = addr_clean.replace(' ', '+')
+            lines.append(f"🗺️ *Map*: [Click Here](https://maps.google.com/?q={addr_clean})")
+        
+        lines.append("")
     
+    lines.append("═" * 40)
+    lines.append(f"📡 *Data fetched from: {data.get('source', 'Unknown')}*")
     lines.append("")
     lines.append("═" * 40)
     lines.append("🔥 *Powered by KUSHZNDR* 🔥")
@@ -252,7 +270,6 @@ def format_aadhaar_result(data):
     if not data or "error" in data:
         return f"❌ *Error:* {data.get('error', 'Unknown')}"
     
-    # Check if no data
     if not data.get('data') or not data['data'].get('aadhaar_info'):
         return """
 😔 *Sorry, we can't find data from your input.*
@@ -348,7 +365,6 @@ def format_gst_result(data):
     if not data or "error" in data:
         return f"❌ *Error:* {data.get('error', 'Unknown')}"
     
-    # Check if no data
     if not data.get('gstin') or not data.get('razorpay_info'):
         return """
 😔 *Sorry, we can't find data from your input.*
@@ -410,7 +426,6 @@ def format_vehicle_result(data):
     if not data or "error" in data:
         return f"❌ *Error:* {data.get('error', 'Unknown')}"
     
-    # Check if no data
     if not data.get('registration_number'):
         return """
 😔 *Sorry, we can't find data from your input.*
@@ -750,10 +765,17 @@ def handle_query(msg):
             bot.reply_to(msg, "❌ Invalid number. Send exactly 10 digits (no +91).\nExample: `9876543210`", parse_mode='Markdown')
             return
         
-        bot.send_message(chat_id, f"⏳ Fetching details for `{number}`...", parse_mode='Markdown')
+        # ===== WAITING MESSAGE =====
+        waiting_msg = bot.send_message(chat_id, "⏳ *This might take a few seconds... Kindly wait while we fetch the best data from multiple sources.*", parse_mode='Markdown')
         
-        data = fetch_merged_number(number)
-        result = format_merged_number_result(data)
+        data = fetch_all_apis(number)
+        result = format_number_result(data)
+        
+        # Delete waiting message
+        try:
+            bot.delete_message(chat_id, waiting_msg.message_id)
+        except:
+            pass
         
         log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, "number", number, data)
         
@@ -775,10 +797,15 @@ def handle_query(msg):
             bot.reply_to(msg, "❌ Invalid Aadhaar. Send exactly 12 digits.\nExample: `352283381852`", parse_mode='Markdown')
             return
         
-        bot.send_message(chat_id, f"⏳ Fetching family details for Aadhaar `{aadhaar}`...", parse_mode='Markdown')
+        waiting_msg = bot.send_message(chat_id, "⏳ *This might take a few seconds... Kindly wait.*", parse_mode='Markdown')
         
         data = fetch_api2(aadhaar)
         result = format_aadhaar_result(data)
+        
+        try:
+            bot.delete_message(chat_id, waiting_msg.message_id)
+        except:
+            pass
         
         log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, "aadhaar", aadhaar, data)
         
@@ -800,10 +827,15 @@ def handle_query(msg):
             bot.reply_to(msg, "❌ Invalid GST. Send exactly 15 characters.\nExample: `07AABCF8078M1Z3`", parse_mode='Markdown')
             return
         
-        bot.send_message(chat_id, f"⏳ Fetching company details for GST `{gst}`...", parse_mode='Markdown')
+        waiting_msg = bot.send_message(chat_id, "⏳ *This might take a few seconds... Kindly wait.*", parse_mode='Markdown')
         
         data = fetch_api3(gst)
         result = format_gst_result(data)
+        
+        try:
+            bot.delete_message(chat_id, waiting_msg.message_id)
+        except:
+            pass
         
         log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, "gst", gst, data)
         
@@ -825,10 +857,15 @@ def handle_query(msg):
             bot.reply_to(msg, "❌ Invalid registration number. Send proper format.\nExample: `MH12DE1433`", parse_mode='Markdown')
             return
         
-        bot.send_message(chat_id, f"⏳ Fetching vehicle details for `{vehicle}`...", parse_mode='Markdown')
+        waiting_msg = bot.send_message(chat_id, "⏳ *This might take a few seconds... Kindly wait.*", parse_mode='Markdown')
         
         data = fetch_api4(vehicle)
         result = format_vehicle_result(data)
+        
+        try:
+            bot.delete_message(chat_id, waiting_msg.message_id)
+        except:
+            pass
         
         log_search(msg.from_user.id, msg.from_user.username, msg.from_user.first_name, "vehicle", vehicle, data)
         
